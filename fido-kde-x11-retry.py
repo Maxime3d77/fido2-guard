@@ -115,13 +115,17 @@ def request_retry():
     env = os.environ.copy()
     env.update(values)
     # The currently active X11 window MUST belong to the greeter process.
-    active = run([xdotool, "getactivewindow", "getwindowpid"], env=env)
+    window = run([xdotool, "getactivewindow"], env=env)
+    if window is None or window.returncode or not window.stdout.strip().isdigit():
+        logging.info("Cannot identify active X11 window; no keystroke")
+        return
+    window_id = window.stdout.strip()
+    active = run([xdotool, "getwindowpid", window_id], env=env)
     if active is None or active.returncode or active.stdout.strip() != str(pid):
         logging.info("Active X11 window does not belong to KScreenLocker; no keystroke")
         return
     result = run([xdotool, "key", "--clearmodifiers", "--window",
-                  # Always send only to the active window, never to a saved window id.
-                  ":ACTIVE:", "Return"], env=env)
+                  window_id, "Return"], env=env)
     if result is None or result.returncode:
         logging.warning("X11 PAM retry was not delivered")
     else:
