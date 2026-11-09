@@ -149,6 +149,20 @@ Unplug and reinsert your security key. The output should include `REMOVED` and `
 
 The KDE 5.27 lock screen does not provide an independently validated external API for safely replacing an already-active password prompt with an FIDO2 prompt. Delivering this specific UX requires a separately developed and tested KScreenLocker integration, with version-specific handling for Plasma 5 and 6. **Do not run the integrated setup repeatedly to fix this behavior.**
 
+## Configuration health dashboard (v2.9)
+
+The top of the full-screen terminal UI now displays a **read-only health overview**:
+
+- **Packages** — presence of core PAM, FIDO2, and Python-udev tools.
+- **Keys** — number of credentials registered for the current user (not proof that a physical key is plugged in or working).
+- **KDE PAM** — presence of a touch-required FIDO2 rule and a recognizable password fallback (configuration check, not a live unlock test).
+- **Removal lock** — systemd status of the optional lock-on-removal service.
+- **Insertion retry** — user-systemd status of the experimental KDE X11 retry watcher.
+
+Statuses are `READY`, `CONFIGURED`, `ACTIVE`, `DISABLED`, `MISSING`, or `ERROR`. **Disabled optional functions are not treated as setup errors.** The dashboard shows recommended menu actions when anything is missing. Press **F5** to refresh, or wait for its periodic refresh (15 seconds). Starting the interface does not modify PAM, register keys, or toggle services.
+
+**Important:** A status of `CONFIGURED` means the relevant files and services appear correctly set up, **not** that FIDO2 unlocking has been successfully tested on the current device. Verify the real KDE lock screen with both touch and password.
+
 ## Modern terminal dashboard
 
 The manager now includes a **full-screen Textual TUI**, with a live action search field, scrollable selection list, detail panel, and status header. It runs in a **dedicated Python virtual environment** under `/opt/fido2-guard/ui-venv`, without installing Python packages into the system interpreter.
