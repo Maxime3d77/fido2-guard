@@ -742,16 +742,36 @@ EOF
  echo 'KDE X11 retry watcher files installed. PAM and existing keys unchanged.'
 }
 enable_kde_retry(){
- echo 'EXPERIMENTAL KDE 5 X11 AUTO-RETRY.'
- echo 'Insertion sends one Return only if the locked greeter owns the active window.'
- echo 'It can submit previously typed text. No guarantee on every KDE/X11 theme.'
- echo 'Password fallback stays enabled. No automatic unlock is performed.'
- read -r -p 'Type ENABLE X11 RETRY to opt in: ' answer
- [[ "$answer" == 'ENABLE X11 RETRY' ]] || { echo 'Cancelled'; return 0; }
- install_kde_retry || return 1
- user_systemctl enable --now "$RETRY_UNIT_NAME" || return 1
- user_systemctl is-active "$RETRY_UNIT_NAME" || return 1
- echo 'Watcher enabled. Test after locking, and watch journalctl --user.'
+ echo
+ echo '=== KDE X11: AUTOMATIC FIDO2 RETRY ==='
+ echo 'What this does: watches for FIDO2 USB insertion while your KDE screen is locked.'
+ echo 'It tries to restart the existing PAM challenge using one simulated Enter keystroke.'
+ echo 'Your password fallback remains available; physical key touch is still required.'
+ echo 'CAUTION: Experimental on KDE/X11; may submit typed text. Not supported on Wayland.'
+ echo
+ local answer
+ read -r -p 'Install and enable this watcher now? [y/N]: ' answer
+ case "$answer" in
+    y|Y|yes|YES|Yes) ;;
+    *) echo 'No changes made. Automatic insertion retry remains unchanged.'; return 0 ;;
+ esac
+ if ! install_kde_retry; then
+    echo 'ERROR: Watcher installation failed. Existing keys and PAM were not modified.'
+    return 1
+ fi
+ if ! user_systemctl enable --now "$RETRY_UNIT_NAME"; then
+    echo 'ERROR: Could not enable the user watcher. Check user systemd session.'
+    return 1
+ fi
+ if ! user_systemctl is-active "$RETRY_UNIT_NAME"; then
+    echo 'ERROR: Watcher did not stay active. Check journalctl --user.'
+    return 1
+ fi
+ echo
+ echo 'SUCCESS: KDE X11 insertion watcher is ENABLED and RUNNING.'
+ echo 'Test: remove the key, lock KDE, reinsert it, and then touch it if prompted.'
+ echo 'Logs: journalctl --user -u fido2-kde-retry.service -n 50 --no-pager'
+ echo 'Rollback: menu 19, or systemctl --user disable --now fido2-kde-retry.service'
 }
 disable_kde_retry(){
  user_systemctl disable --now "$RETRY_UNIT_NAME" 2>/dev/null || :
