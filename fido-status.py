@@ -24,37 +24,64 @@ def cmd(args, timeout=3, env=None):
         return None
 
 def system_unit(name, user=None):
+    """Read systemd states without opening a PAM session at every refresh."""
     arguments = ["systemctl"]
+    env = None
     if user is not None:
         try:
             identity = pwd.getpwnam(user)
         except KeyError:
             return {"state": "ERROR", "detail": "User not found"}
         runtime = f"/run/user/{identity.pw_uid}"
-        if not Path(runtime, "bus").exists():
+        if not Path(runtime, "bus").is_socket():
             return {"state": "MISSING", "detail": "User systemd bus unavailable"}
         env = dict(os.environ, XDG_RUNTIME_DIR=runtime,
                    DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/bus")
-        arguments = ["runuser", "-u", user, "--", "env",
-                     f"XDG_RUNTIME_DIR={runtime}",
-                     f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus", "systemctl", "--user"]
-    else:
-        env = None
-    enabled = cmd(arguments + ["is-enabled", name], env=env)
-    running = cmd(arguments + ["is-active", name], env=env)
-    e = enabled.stdout.strip() if enabled else "unknown"
-    a = running.stdout.strip() if running else "unknown"
-    if e == "enabled" and a == "active":
-        return {"state": "ACTIVE", "detail": "Running and enabled"}
-    if a == "active":
-        return {"state": "ACTIVE", "detail": f"Running (startup: {e})"}
-    if a == "failed":
-        return {"state": "ERROR", "detail": "Service failed; inspect journal"}
-    if e in ("disabled", "static", "indirect") or a == "inactive":
-        return {"state": "DISABLED", "detail": f"Installed; {e} / {a}"}
-    if e == "masked":
-        return {"state": "ERROR", "detail": "Service masked"}
-    return {"state": "MISSING", "detail": "Unit not installed"}
+        # setpriv drops credentials without the PAM session opened by runuser.
+        if not shutil.which("setpriv"):
+            return {"state": "ERROR", "detail": "setpriv unavailable (util-linux)"}
+        arguments = ["setpriv", "--reuid", str(identity.pw_uid),
+                     "--regid", str(identity.pw_gid), "--init-groups",
+                     "--", "systemctl", "--user"]
+    result = cmd(arguments + ["show", name, "--property=LoadState",
+                              "--property=UnitFileState", "--property=ActiveState"],
+                 env=env)
+    if not result:
+        return {"state": "ERROR", "detail": "Unable to query systemd"}
+    values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    load = values.get("LoadState", "")
+    enabled = values.get("UnitFileState", "")
+    active = values.get("ActiveState", "")
+    if load == "not-found":
+        return {"state": "MISSING", "detail": "Unit not installed"}
+    if load == "masked" or enabled == "masked" or active == "failed":
+        return {"state": "ERROR", "detail": f"{load or 'unknown'} / {active or 'unknown'}"}
+    if active == "active":
+        return {"state": "ACTIVE", "detail": f"Running (startup: {enabled or 'unknown'})"}
+    if load == "loaded":
+        return {"state": "DISABLED", "detail": f"Installed; {enabled or 'unknown'} / {active or 'unknown'}"}
+    return {"state": "ERROR", "detail": f"Unknown systemd state: {load or result.stderr.strip()[:60]}"}
+
+
+def login_environment(user):
+    """Show the actual display manager and home encryption without PAM changes."""
+    service_result = cmd(["systemctl", "show", "display-manager.service", "-p", "Id"])
+    display = "UNKNOWN"
+    if service_result and service_result.returncode == 0:
+        for line in service_result.stdout.splitlines():
+            if line.startswith("Id="):
+                display = line[3:].removesuffix(".service").upper()
+                break
+    identity = pwd.getpwnam(user)
+    result = cmd(["findmnt", "--noheadings", "-T", identity.pw_dir, "-o", "FSTYPE"])
+    fstype = result.stdout.strip().splitlines()[0].strip() if result and result.returncode == 0 and result.stdout.strip() else "UNKNOWN"
+    encrypted = fstype == "ecryptfs"
+    return {
+        "display": display, "fstype": fstype, "ecryptfs": encrypted,
+        "detail": ("Password needed to unwrap eCryptfs home at first login; "
+                   "FIDO2-only LightDM login not established"
+                   if encrypted else "Initial login authentication not verified"),
+    }
 
 def fido_map(user):
     if not MAP.exists():
@@ -106,10 +133,13 @@ def main():
     deps = dependencies()
     lock = system_unit("thetis-guard.service")
     retry = system_unit("fido2-kde-retry.service", user=user)
+    login = login_environment(user)
     retry_path = Path(pwd.getpwnam(user).pw_dir) / ".config/systemd/user/fido2-kde-retry.service"
     if not retry_path.exists() and retry["state"] != "ACTIVE":
         retry = {"state": "MISSING", "detail": "Not installed; menu 18 installs and enables (KDE X11 only)"}
     issues = []
+    if login["ecryptfs"]:
+        issues.append("First login: use your Linux password to unlock eCryptfs (FIDO touch alone is insufficient)")
     if deps["state"] != "READY":
         issues.append("Install missing dependencies (1)")
     if keys["state"] != "CONFIGURED":
@@ -122,9 +152,10 @@ def main():
         issues.append("Optional: KDE X11 insertion watcher disabled (18)")
     if lock["state"] == "DISABLED":
         issues.append("Optional: USB removal locking disabled (14)")
-    overall = "ACTION NEEDED" if any(x["state"] not in ("CONFIGURED", "READY") for x in (keys, pam, deps)) else "CONFIGURED"
+    overall = "ACTION NEEDED" if any(x["state"] not in ("CONFIGURED", "READY") for x in (keys, pam, deps)) else "KDE CONFIGURED"
     print(json.dumps({"overall": overall, "keys": keys, "pam": pam, "dependencies": deps,
-                      "removal": lock, "retry": retry, "advice": issues}, ensure_ascii=False))
+                      "removal": lock, "retry": retry, "login": login,
+                      "advice": issues}, ensure_ascii=False))
     return 0
 
 if __name__ == "__main__":
