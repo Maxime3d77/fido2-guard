@@ -98,7 +98,7 @@ class GuardUI(App):
 
     def update_detail(self) -> None:
         selected = self.query_one("#items", OptionList)
-        item = selected.get_option_at_index(selected.highlighted) if selected.highlighted is not None else None
+        item = selected.highlighted_option
         entry = BY_ID.get(str(item.id)) if item is not None else None
         if not entry:
             return
