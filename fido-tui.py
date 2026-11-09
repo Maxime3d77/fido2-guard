@@ -5,6 +5,8 @@ Only returns a menu action to the existing Bash manager; does not change PAM,
 USB device access, or the lock state. Requires Python >=3.9 and textual.
 """
 import sys
+import json
+import subprocess
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -44,9 +46,14 @@ class GuardUI(App):
     Screen { background: #0b1320; color: #e4edf9; }
     Header { background: #101f34; color: #7fc4fc; }
     Footer { background: #101f34; }
-    #hero { dock: top; height: 5; padding: 1 3; background: #10243a; color: #d7ebff; }
+    #hero { dock: top; height: 10; padding: 0 2; background: #10243a; color: #d7ebff; }
     #hero_title { text-style: bold; color: #80c8ff; height: 1; }
     #hero_status { color: #b2c6db; height: 1; }
+    #health { height: 4; color: #d9edf8; }
+    #remediation { height: 2; color: #facb7a; }
+    #health .green { color: #7ce1ba; }
+    #health .yellow { color: #ffce84; }
+    #health .red { color: #ffa3a3; }
     #workspace { height: 1fr; padding: 1 2 0 2; }
     #left { width: 2fr; min-width: 32; }
     #right { width: 1fr; min-width: 25; margin-left: 2; background: #122036; padding: 1 2; border: tall #284a69; }
@@ -64,7 +71,8 @@ class GuardUI(App):
         Binding("escape", "quit", "Quit"),
         Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("slash", "focus_search", "Search"),
-        Binding("f5", "clear_search", "Clear filter"),
+        Binding("f5", "refresh_health", "Refresh status"),
+        Binding("ctrl+l", "clear_search", "Clear filter"),
     ]
 
     def __init__(self, output: Path, user: str, distro: str, keys: str, service: str):
@@ -74,6 +82,7 @@ class GuardUI(App):
         self.distro = distro
         self.keys = keys
         self.service = service
+        self.health = {}
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -83,6 +92,8 @@ class GuardUI(App):
                 f"User  {self.user}    ·    Distro  {self.distro}    ·    Keys  {self.keys}    ·    Removal monitor  {self.service}",
                 id="hero_status",
             )
+            yield Static("Checking FIDO2 Guard components…", id="health")
+            yield Static("F5 refreshes configuration and service status.", id="remediation")
         with Horizontal(id="workspace"):
             with Vertical(id="left"):
                 yield Input(placeholder="Search actions…  (press /)", id="search")
@@ -98,6 +109,43 @@ class GuardUI(App):
     def on_mount(self) -> None:
         self.query_one("#items", OptionList).focus()
         self.update_detail()
+        self.action_refresh_health()
+        self.set_interval(15, self.action_refresh_health)
+
+    def action_refresh_health(self) -> None:
+        script = Path(__file__).with_name("fido-status.py")
+        if not script.is_file():
+            self.query_one("#health", Static).update("[red]Status checker missing: update your Git checkout.[/]")
+            self.query_one("#remediation", Static).update("Run: git pull --ff-only")
+            return
+        try:
+            result = subprocess.run(["/usr/bin/python3", str(script), self.user],
+                                    capture_output=True, text=True, timeout=8, check=False)
+            if result.returncode:
+                raise RuntimeError(result.stderr.strip() or "Status check failed")
+            self.health = json.loads(result.stdout)
+        except (OSError, ValueError, subprocess.TimeoutExpired, RuntimeError) as error:
+            self.query_one("#health", Static).update(f"[red]Health check unavailable: {str(error)[:95]}[/]")
+            self.query_one("#remediation", Static).update("Check read-only status checker and systemd connectivity.")
+            return
+
+        data = self.health
+        def indicator(name: str, label: str) -> str:
+            state = data.get(name, {}).get("state", "ERROR")
+            tone = "green" if state in ("READY", "ACTIVE", "CONFIGURED") else (
+                "yellow" if state in ("DISABLED", "MISSING") else "red")
+            return f"{label} [{tone}]{state}[/]"
+        lines = [
+            f"Health: {data.get('overall', 'UNKNOWN')}     " + indicator("dependencies", "Dependencies:"),
+            indicator("keys", "Security keys:") + "    " + indicator("pam", "KDE PAM:"),
+            indicator("removal", "Lock on removal:") + "    " + indicator("retry", "KDE insertion retry:"),
+        ]
+        self.query_one("#health", Static).update("\n".join(lines))
+        advice = data.get("advice", [])
+        if advice:
+            self.query_one("#remediation", Static).update("Next: " + str(advice[0]) + ("  •  More details: option 10" if len(advice) > 1 else ""))
+        else:
+            self.query_one("#remediation", Static).update("Core components configured. Test authentication on the real lock screen.")
 
     def update_detail(self) -> None:
         selected = self.query_one("#items", OptionList)
