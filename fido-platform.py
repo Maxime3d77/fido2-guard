@@ -81,6 +81,42 @@ def active_pam_rules(path):
         return []
 
 
+def lockscreen_qml(plasma_major):
+    """Locate known QML lockscreen entry points; never modify package files."""
+    roots = ([Path("/usr/share/plasma/look-and-feel"),
+              Path("/usr/local/share/plasma/look-and-feel")]
+             if plasma_major == 5 else
+             [Path("/usr/share/plasma/shells"),
+              Path("/usr/local/share/plasma/shells")])
+    matches = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            files = root.glob("*/contents/lockscreen/LockScreenUi.qml")
+            for path in files:
+                if len(matches) >= 20:
+                    break
+                try:
+                    source = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                if "authenticator.tryUnlock()" in source:
+                    entry = "tryUnlock"
+                elif "authenticator.startAuthenticating()" in source:
+                    entry = "startAuthenticating"
+                else:
+                    entry = "unrecognized"
+                matches.append({
+                    "path": str(path),
+                    "reauth_api": entry,
+                    "passwordless_branch": "NoPasswordUnlock.qml" in source,
+                })
+        except OSError:
+            continue
+    return matches
+
+
 def detect(user):
     user_info = pwd.getpwnam(user)
     session = login_session(user_info.pw_uid)
@@ -91,6 +127,7 @@ def detect(user):
     has_map = Path("/etc/thetis-auth/u2f_keys").is_file()
     kde_auth = active_pam_rules("/etc/pam.d/kde")
     kde_u2f = active_pam_rules("/etc/pam.d/kde-u2f")
+    qml = lockscreen_qml(plasma["major"])
     u2f_rule = any("pam_u2f.so" in line for line in kde_auth)
     separate_u2f = any("pam_u2f.so" in line for line in kde_u2f)
     # Plasma 6 may have a separate native U2F authenticator, but a
@@ -122,6 +159,7 @@ def detect(user):
         "native_u2f_pam_candidate": separate_u2f,
         "mapped_key_file_exists": has_map,
         "adapter": adapter,
+        "qml": qml,
         "auto_retry": auto,
         "explanation": note,
     }
@@ -149,6 +187,8 @@ def main():
           f"{'present' if report['kde_pam_has_u2f'] else 'not detected'}")
     print(f"Adapter: {report['adapter']} | Automatic insertion retry: {report['auto_retry']}")
     print(report["explanation"])
+    for item in report["qml"][:3]:
+        print(f"QML: {item[\'reauth_api\']} ({item[\'path\']})")
     if report["encrypted_home_needs_password"]:
         print("WARNING: eCryptfs first login requires a home-unwrapping secret;"
               " FIDO2 touch alone does not provide it.")
