@@ -55,7 +55,9 @@ def discover():
 def current_x11_session():
     sessions = run(["loginctl", "list-sessions", "--no-legend", "--no-pager"])
     if sessions is None or sessions.returncode != 0:
+        logging.warning("Unable to enumerate logind sessions")
         return None
+    seen = []
     for line in sessions.stdout.splitlines():
         parts = line.split()
         if len(parts) < 2 or parts[1] != str(UID):
@@ -66,9 +68,11 @@ def current_x11_session():
         if info is None or info.returncode:
             continue
         values = dict(line.split("=", 1) for line in info.stdout.splitlines() if "=" in line)
+        seen.append(f"{sid} type={values.get('Type', '?')} active={values.get('Active', '?')} locked={values.get('LockedHint', '?')} remote={values.get('Remote', '?')}")
         if (values.get("Type") == "x11" and values.get("Active") == "yes"
                 and values.get("LockedHint") == "yes" and values.get("Remote") == "no"):
             return sid
+    logging.info("No verified locked X11 logind session; inspected: %s", "; ".join(seen) or "none")
     return None
 
 def greeter_environment():
@@ -97,7 +101,10 @@ def greeter_environment():
             candidates.append((int(directory.name), values))
         except (OSError, UnicodeError, ValueError):
             continue
-    return candidates[0] if len(candidates) == 1 else None
+    if len(candidates) != 1:
+        logging.info("Expected one own KScreenLocker process; found %d", len(candidates))
+        return None
+    return candidates[0]
 
 def request_retry():
     if not current_x11_session():
@@ -122,7 +129,7 @@ def request_retry():
     window_id = window.stdout.strip()
     active = run([xdotool, "getwindowpid", window_id], env=env)
     if active is None or active.returncode or active.stdout.strip() != str(pid):
-        logging.info("Active X11 window does not belong to KScreenLocker; no keystroke")
+        logging.info("Greeter PID=%s; active X11 window=%s pid=%s; no keystroke", pid, window_id, active.stdout.strip() if active else "?")
         return
     result = run([xdotool, "key", "--clearmodifiers", "--window",
                   window_id, "Return"], env=env)
@@ -152,13 +159,22 @@ def main():
                 continue
             if event.action != "add":
                 continue
-            time.sleep(0.9)
-            refreshed = discover()
+            # USB nodes can appear after the usb_device event; allow udev to settle.
+            refreshed = None
+            added = set()
+            for attempt in range(7):
+                time.sleep(0.5)
+                refreshed = discover()
+                if refreshed is not None:
+                    added = refreshed - known
+                    if added:
+                        break
             if refreshed is None:
-                logging.warning("Unable to enumerate after USB event")
+                logging.warning("Unable to enumerate FIDO2 devices after USB event")
                 continue
-            added = refreshed - known
             known = refreshed
+            if not added:
+                logging.info("USB insert observed, but no new FIDO2 token was enumerated")
             if added and time.monotonic() - last > 3:
                 last = time.monotonic()
                 logging.info("FIDO2 USB inserted (%d new), checking KDE lock", len(added))
