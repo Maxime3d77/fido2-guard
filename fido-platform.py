@@ -188,7 +188,7 @@ def main():
     print(f"Adapter: {report['adapter']} | Automatic insertion retry: {report['auto_retry']}")
     print(report["explanation"])
     for item in report["qml"][:3]:
-        print(f"QML: {item[\'reauth_api\']} ({item[\'path\']})")
+        print("QML: {} ({})".format(item["reauth_api"], item["path"]))
     if report["encrypted_home_needs_password"]:
         print("WARNING: eCryptfs first login requires a home-unwrapping secret;"
               " FIDO2 touch alone does not provide it.")
