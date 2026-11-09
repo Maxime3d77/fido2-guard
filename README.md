@@ -1,8 +1,16 @@
-# FIDO2 Guard — v2.7
+# FIDO2 Guard — v2.8
 
 A Linux **FIDO2/U2F security key manager** with PAM authentication for KDE Plasma and **optional automatic screen locking when a USB FIDO2 key is removed**.
 
 > **Experimental, not security-audited.** Intermittent KScreenLocker issues (black screens and unexpected behavior) have been observed during testing on Linux Mint KDE. Test on a non-critical computer, keep a working password and an administrator recovery console available, and do not deploy directly to production.
+
+## KDE key insertion and screen unlock (v2.8)
+
+**Important limitation:** Inserting a FIDO2 key while KScreenLocker is already waiting for a password does **not** reliably switch the existing PAM conversation to a touch prompt. This depends on KDE's lock-screen implementation; it cannot safely be fixed by a systemd USB watcher or by reloading PAM files. The v2.8 manager therefore **does not claim to automatically switch the locked screen UI**.
+
+Menu **16 — KDE / FIDO2 state diagnostics** checks for detected FIDO devices, registered key count, and whether the KDE PAM profile has a touch-required U2F rule. It is read-only and does not authenticate, unlock, or send keystrokes. This is a diagnostic step toward a future KDE integration rather than the final adaptive UI.
+
+If PAM is already prompting for a touch, touch the key; otherwise use the regular password. The existing password fallback remains available. A true automatic UI transition requires validated changes to KScreenLocker/Plasma that can restart PAM authentication safely when a key arrives, including correct behavior across X11 and Wayland.
 
 ## Features
 
@@ -64,6 +72,7 @@ Option **07 installs the monitoring daemon but leaves lock-on-removal disabled b
 | 11 | Remove the monitoring service only |
 | 12 | Full removal with explicit confirmation and backup |
 | 14 / 15 | Enable / disable lock on removal |
+| 16 | Read-only KDE key/PAM state diagnostics |
 
 *The current terminal interface may display some menu text in French.*
 
@@ -125,4 +134,4 @@ fido2-guard/
 └── fido-removal-guard.py    # USB removal monitor; locks only
 ```
 
-**Version:** 2.7. **License:** No redistribution license has been explicitly granted until a LICENSE file is added.
+**Version:** 2.8. **License:** No redistribution license has been explicitly granted until a LICENSE file is added.
