@@ -76,13 +76,34 @@ sync_user_authfile(){
 }
 
 install_deps(){
+ echo 'Installing FIDO2, PAM, USB monitor, and terminal UI prerequisites.'
  case "$PKG" in
-  apt) apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y libpam-u2f pamu2fcfg fido2-tools python3 python3-pyudev pamtester whiptail;;
-  dnf) dnf install -y pam-u2f pamu2fcfg libfido2 python3 python3-pyudev pamtester newt;;
-  pacman) pacman -Syu --needed pam-u2f libfido2 python python-pyudev libnewt;;
-  *) echo "Distribution $OS_ID : installation automatique non prise en charge."; return 1;;
+  apt)
+    apt-get update || return 1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      libpam-u2f pamu2fcfg fido2-tools python3 python3-pyudev \
+      python3-venv python3-pip pamtester whiptail || return 1
+    ;;
+  dnf)
+    dnf install -y pam-u2f pamu2fcfg libfido2 fido2-tools \
+      python3 python3-pyudev python3-pip pamtester newt || return 1
+    ;;
+  pacman)
+    # Do not run a full system upgrade automatically from a FIDO manager.
+    pacman -S --needed pam-u2f libfido2 python python-pip \
+      python-pyudev libnewt || return 1
+    echo 'On Arch, pamu2fcfg and pamtester may require separate packages; verify availability.'
+    ;;
+  *)
+    echo "Unsupported automatic dependency installation on: $OS_ID"
+    return 1
+    ;;
  esac
- echo 'Sur Arch, pamtester peut être indisponible dans les dépôts standard : l’installation est refusée si absent.'
+ echo 'Core package installation completed.'
+ if [[ -f "$SELF_DIR/fido-tui.py" ]] && [[ -t 0 && -t 1 ]]; then
+   echo 'Checking the isolated Textual terminal interface...'
+   ensure_textual_ui || echo 'Textual is optional; the fallback menu remains available.'
+ fi
 }
 list_keys(){
  echo "=== Clés autorisées pour $TARGET ==="
@@ -229,7 +250,7 @@ WantedBy=multi-user.target
 EOF
  chmod 644 "$UNIT"
  systemctl daemon-reload
- echo 'Surveillance installée mais DÉSACTIVÉE. Menu 14 pour l’activer.'
+ echo 'Surveillance installée mais DISABLEDE. Menu 14 pour l’activer.'
 }
 enable_guard(){
  echo 'ACTIVER LE VERROUILLAGE AUTOMATIQUE AU RETRAIT ?'
@@ -245,7 +266,7 @@ enable_guard(){
 }
 disable_guard(){
  systemctl disable --now thetis-guard.service 2>/dev/null || true
- echo 'Verrouillage au retrait DÉSACTIVÉ. Clés et PAM KDE CONSERVÉS.'
+ echo 'Verrouillage au retrait DISABLED. Clés et PAM KDE CONSERVÉS.'
 }
 remove_guard(){
  systemctl disable --now thetis-guard.service 2>/dev/null || :
@@ -646,16 +667,16 @@ kde_key_state_diagnostic(){
 
 show_header(){
  clear 2>/dev/null || :
- local svc=DÉSACTIVÉ pam=INACTIF
- systemctl -q is-active thetis-guard.service && svc=ACTIF
- [[ -f "$PAM_TARGET_META" ]] && pam=FICHIER_MODIFIÉ
+ local svc=DISABLED pam=INACTIVE
+ systemctl -q is-active thetis-guard.service && svc=ACTIVE
+ [[ -f "$PAM_TARGET_META" ]] && pam=MODIFIED
  printf '\033[1;36m╔══════════════════════════════════════════════════════════════════╗\n'
  printf '║                   FIDO2 GUARD  v2.8                            ║\n'
- printf '║           Gestion sécurisée des clés Linux                     ║\n'
+ printf '║           Linux security key manager                     ║\n'
  printf '╚══════════════════════════════════════════════════════════════════╝\033[0m\n'
- printf '  Système : %-18s  Paquets : %-10s\n' "$OS_ID" "$PKG"
- printf '  Compte  : %-18s  Clés    : %-10s\n' "$TARGET" "$(count)"
- printf '  Service : %-18s  PAM KDE : %s\n\n' "$svc" "$pam"
+ printf '  System : %-18s  Packages : %-10s\n' "$OS_ID" "$PKG"
+ printf '  Account : %-18s  Keys     : %-10s\n' "$TARGET" "$(count)"
+ printf '  Service : %-18s  KDE PAM  : %s\n\n' "$svc" "$pam"
 }
 UI_VENV=/opt/fido2-guard/ui-venv
 TEXTUAL_UI="$SELF_DIR/fido-tui.py"
@@ -665,17 +686,17 @@ ensure_textual_ui(){
   [[ -t 0 && -t 1 ]] || return 1
   [[ "${FIDO2_NO_UI_INSTALL:-0}" == 1 ]] && return 1
   echo
-  echo 'Interface Textual moderne non installée (Python 3.9+ requis).'
-  read -r -p 'Installer automatiquement Textual dans un venv isolé ? [o/N] ' answer </dev/tty || return 1
-  [[ "$answer" == [oOyY] ]] || return 1
+  echo 'Modern Textual interface is not installed (Python 3.9+ required).'
+  read -r -p 'Install Textual in an isolated Python virtual environment? [y/N] ' answer </dev/tty || return 1
+  [[ "$answer" == [yY] ]] || return 1
   command -v python3 >/dev/null || return 1
   mkdir -p /opt/fido2-guard
   if ! python3 -m venv "$UI_VENV"; then
-     echo 'python3-venv est requis : sudo apt install python3-venv (Debian/Mint).'
+     echo 'python3-venv is required: sudo apt install python3-venv (Debian/Mint).'
      return 1
   fi
   if ! "$UI_VENV/bin/python" -m pip install --disable-pip-version-check 'textual>=0.70,<10'; then
-     echo 'Échec de l’installation Textual. Menu de secours disponible.'
+     echo 'Textual installation failed. Fallback menu is still available.'
      return 1
   fi
   "$UI_VENV/bin/python" -c 'import textual'
@@ -686,8 +707,8 @@ menu_choice(){
     local selected state
     selected=$(mktemp /tmp/fido2-choice.XXXXXXXX)
     chmod 600 "$selected"
-    state=DÉSACTIVÉ
-    systemctl -q is-active thetis-guard.service && state=ACTIF
+    state=DISABLED
+    systemctl -q is-active thetis-guard.service && state=ACTIVE
     "$UI_VENV/bin/python" "$TEXTUAL_UI" "$selected" "$TARGET" "$OS_ID" "$(count)" "$state" \
        </dev/tty >/dev/tty 2>/dev/tty || :
     if [[ -s "$selected" ]]; then
@@ -698,25 +719,25 @@ menu_choice(){
     return 0
  fi
  local -a choices=(
-   1 'Installer les dépendances'
-   2 'Ajouter une clé FIDO2'
-   3 'Lister les clés enregistrées'
-   4 'Révoquer une clé'
-   5 'Importer des clés existantes'
-   6 'Préparer un test PAM avec toucher'
-   7 'Installation intégrée (installation initiale / réparation)'
-   8 'Aide configuration PAM'
-   9 'Restaurer PAM KDE'
-   10 'Statut du service et journaux'
-   11 'Supprimer uniquement le service'
-   12 'Purge totale (double confirmation)'
-   13 'Diagnostic PAM KDE'
-   14 'Activer le verrouillage au retrait'
-   15 'Désactiver le verrouillage au retrait'
-   16 'Diagnostic FIDO2 connecté / KDE'
-   0 'Quitter'
+   1 'Install dependencies'
+   2 'Add a FIDO2 security key'
+   3 'List registered security keys'
+   4 'Revoke a security key'
+   5 'Import existing security keys'
+   6 'Prepare PAM touch test'
+   7 'Integrated setup (initial install / repair)'
+   8 'PAM configuration help'
+   9 'Restore KDE PAM'
+   10 'Service status and logs'
+   11 'Remove monitoring service only'
+   12 'Full uninstall (confirm twice)'
+   13 'KDE PAM diagnostics'
+   14 'Enable lock on key removal'
+   15 'Disable lock on key removal'
+   16 'Connected FIDO2 device / KDE diagnostics'
+   0 'Exit'
  )
- local prompt='Flèches Haut/Bas pour défiler ; Entrée pour choisir ; Échap pour quitter.'
+ local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
  if [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1; then
     choice=$(whiptail --title 'FIDO2 GUARD' --default-item 10 --menu "$prompt" 21 84 11 "${choices[@]}" 3>&1 1>&2 2>&3) || choice=0
  elif [[ -t 0 && -t 1 ]] && command -v dialog >/dev/null 2>&1; then
@@ -727,7 +748,7 @@ menu_choice(){
     for ((i=0; i<${#choices[@]}; i+=2)); do
        printf ' %2s  %s\n' "${choices[i]}" "${choices[i+1]}" >&2
     done
-    read -r -p 'Choix : ' choice </dev/tty || choice=0
+    read -r -p 'Choice: ' choice </dev/tty || choice=0
     [[ "$choice" =~ ^0*[0-9]+$ ]] || { choice=invalid; return 0; }
     choice=$((10#$choice))
  fi
