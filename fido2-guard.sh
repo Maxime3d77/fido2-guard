@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 if (( EUID != 0 )); then echo 'Lancer avec sudo bash fido2-guard.sh'; exit 1; fi
-SELF_DIR="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BASE=/etc/thetis-auth
 MAP=$BASE/u2f_keys
 LABELS=$BASE/labels.tsv
@@ -14,14 +14,14 @@ META=$BASE/kde-created-by-manager
 USER_MAP=""
 PAM_TARGET_META=$BASE/kde-pam-target
 OS_ID=unknown; OS_LIKE=''; PKG=unsupported
-[[ -r /etc/os-release ]] && { . /etc/os-release; OS_ID=\${ID:-unknown}; OS_LIKE=\${ID_LIKE:-}; }
+[[ -r /etc/os-release ]] && { . /etc/os-release; OS_ID=${ID:-unknown}; OS_LIKE=${ID_LIKE:-}; }
 case " $OS_ID $OS_LIKE " in
   *' arch '*|*' manjaro '*|*' endeavouros '*|*' cachyos '*) PKG=pacman;;
   *' fedora '*|*' rhel '*|*' centos '*) PKG=dnf;;
   *' debian '*|*' ubuntu '*|*' linuxmint '*) PKG=apt;;
 esac
 if [[ -e /run/ostree-booted ]]; then PKG=immutable; fi
-TARGET=\${SUDO_USER:-}
+TARGET=${SUDO_USER:-}
 [[ -n "$TARGET" && "$TARGET" != root ]] || TARGET=$(logname 2>/dev/null || true)
 [[ -n "$TARGET" && "$TARGET" != root ]] || { echo 'Impossible de trouver le compte cible (utiliser sudo depuis le compte graphique).'; exit 1; }
 id "$TARGET" >/dev/null
@@ -90,7 +90,7 @@ list_keys(){
  local n; n=$(count); local i label
  for ((i=1;i<=n;i++)); do
    label=$(awk -F '\t' -v k="$i" '$1==k{$1="";sub(/^\t/,"");print;exit}' "$LABELS" 2>/dev/null || true)
-   printf '%2d. %s\n' "$i" "\${label:-Clé $i (importée)}"
+   printf '%2d. %s\n' "$i" "${label:-Clé $i (importée)}"
  done
  echo 'Les clés publiques et handles ne sont pas affichés.'
 }
@@ -117,7 +117,7 @@ add_key(){
    fi
    [[ $(cat "$out") == :*,* ]] || { echo 'Format -n inattendu.'; rm -f "$out" "$temp"; return 1; }
    oldline=$(extract_target)
-   fresh="\${oldline}$(tr -d '\n' < "$out")"
+   fresh="${oldline}$(tr -d '\n' < "$out")"
  else
    if ! runuser -u "$TARGET" -- pamu2fcfg -u "$TARGET" > "$out"; then
      echo 'Enregistrement FIDO échoué.'; rm -f "$out" "$temp"; return 1
@@ -403,8 +403,8 @@ complete_purge(){
           "$TEST_PAM" /etc/pam.d/thetis-test /etc/pam.d/thetis-guard \
           /etc/systemd/system/thetis-lock.service; do
    if [[ -f "$f" ]]; then
-     install -d -m 700 "$recovery/$(dirname "\${f#/}")"
-     cp -a "$f" "$recovery/\${f#/}"
+     install -d -m 700 "$recovery/$(dirname "${f#/}")"
+     cp -a "$f" "$recovery/${f#/}"
    fi
  done
  if [[ -d "$BASE" ]]; then cp -a "$BASE" "$recovery/thetis-auth"; fi
