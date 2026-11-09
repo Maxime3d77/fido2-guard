@@ -700,7 +700,27 @@ user_systemctl(){
 }
 install_kde_retry(){
  [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-kde-x11-retry.py is missing.'; return 1; }
- [[ "${XDG_SESSION_TYPE:-}" == x11 ]] || { echo 'This compatibility watcher supports KDE X11 only (not Wayland). Launch it with sudo from your local X11 session.'; return 1; }
+ # sudo may unset XDG_SESSION_TYPE; inspect the target user's real logind session.
+ local session_id session_props session_type session_active session_remote found_x11=0
+ while read -r session_id _; do
+   [[ -n "$session_id" ]] || continue
+   session_props=$(loginctl show-session "$session_id" -p Type -p Active -p Remote --no-pager 2>/dev/null) || continue
+   session_type=$(printf '%s\n' "$session_props" | sed -n 's/^Type=//p')
+   session_active=$(printf '%s\n' "$session_props" | sed -n 's/^Active=//p')
+   session_remote=$(printf '%s\n' "$session_props" | sed -n 's/^Remote=//p')
+   if [[ "$session_type" == x11 && "$session_active" == yes && "$session_remote" == no ]]; then
+     found_x11=1
+     echo "Detected active local X11 session $session_id for $TARGET (via loginctl)."
+     break
+   fi
+ done < <(loginctl list-sessions --no-legend --no-pager 2>/dev/null | awk -v uid="$(id -u "$TARGET")" '$2==uid {print $1}')
+ if (( ! found_x11 )); then
+   echo "ERROR: No active local X11 session found for $TARGET."
+   echo "Available sessions for this account:"
+   loginctl list-sessions --no-pager 2>/dev/null | grep -F "$TARGET" || :
+   echo 'Launch the manager with sudo from the logged-in KDE X11 desktop.'
+   return 1
+ fi
  command -v xdotool >/dev/null || {
    echo 'Installing xdotool dependency (KDE X11 only)...'
    case "$PKG" in
