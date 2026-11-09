@@ -678,7 +678,7 @@ user_systemctl(){
 }
 install_kde_retry(){
  [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-kde-x11-retry.py is missing.'; return 1; }
- [[ "$XDG_SESSION_TYPE" == x11 ]] || { echo 'This compatibility watcher supports KDE X11 only (not Wayland).'; return 1; }
+ [[ "${XDG_SESSION_TYPE:-}" == x11 ]] || { echo 'This compatibility watcher supports KDE X11 only (not Wayland). Launch it with sudo from your local X11 session.'; return 1; }
  command -v xdotool >/dev/null || {
    echo 'Installing xdotool dependency (KDE X11 only)...'
    case "$PKG" in
