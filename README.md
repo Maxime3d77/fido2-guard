@@ -12,42 +12,42 @@ Menu **16 — KDE / FIDO2 state diagnostics** checks for detected FIDO devices, 
 
 If PAM is already prompting for a touch, touch the key; otherwise use the regular password. The existing password fallback remains available. A true automatic UI transition requires validated changes to KScreenLocker/Plasma that can restart PAM authentication safely when a key arrives, including correct behavior across X11 and Wayland.
 
-## v2.9 — KDE Plasma 5 X11 auto-retry watcher (experimental)
+## v2.9 — KDE X11 hotplug monitoring (safety update)
 
-**Existing installations:** update the checkout and launch the manager:
+**Safety change (November 2026):** A previous experimental watcher sent a synthetic **Enter** key event to KScreenLocker on USB insertion. On a password screen, it can submit an empty password and count as a failed PAM attempt. Users also reported black-screen behavior after FIDO2 unlock (causality not yet determined). **Automatic keyboard injection is now suspended**. The watcher only observes USB insertion/removal and logs the KDE lock state; it does not press keys, restart PAM, or unlock the session.
+
+**Important:** To stop a previously installed copy, run:
+
+```bash
+systemctl --user disable --now fido2-kde-retry.service
+```
+
+A **Git pull alone does not replace** the installed script in `/usr/local/libexec`. To deploy the updated passive watcher instead of the older injected-key version:
 
 ```bash
 cd ~/Documents/git/fido2-guard
 git pull --ff-only
-sudo bash fido2-guard.sh
+sudo install -m 755 fido-kde-x11-retry.py /usr/local/libexec/fido2-kde-x11-retry.py
+systemctl --user restart fido2-kde-retry.service
 ```
 
-**Starting with this v2.9 revision**, option **07 — Integrated setup** also installs the KDE X11 retry watcher unit when running on an X11 desktop, but does **not** automatically enable it. You can install and enable it directly with option 18 without rerunning PAM setup. Option **10 — Service status** reports lock-on-removal and KDE insertion retry separately.
+Or choose **18 — Enable KDE X11 insertion monitor (safe mode)** in the manager. **Option 19** disables it. Option 07 prepares the component without enabling it and does not require reenrolling keys when updating. The watcher does not need `xdotool` in safe monitoring mode.
 
-The installer identifies the active local X11 desktop session using `loginctl` for the selected user, since `sudo` often strips `XDG_SESSION_TYPE`. If no active local X11 desktop session can be found, it stops without changing PAM or the registered keys.
+**KDE limitation:** While locked, a late-inserted FIDO2 token may not automatically restart an already-running PAM password conversation. On affected KDE builds, unlock using **a blank password field → Enter → physical FIDO2 touch**, or the normal Linux password. Automatic switching requires a native, tested KScreenLocker integration; a USB watcher alone cannot provide it. **Never weaken the KDE greeter's ptrace protections or disable the password fallback to force this feature.**
 
-Select **18 — Enable KDE X11 FIDO auto-retry (experimental)**. This option installs `fido-kde-x11-retry.py` under `/usr/local/libexec`, sets up a **user-level systemd service**, and offers to install the `xdotool` dependency. When prompted, answer **`y`** to **“Install and enable this watcher now? [y/N]”**. It **does not overwrite** the existing PAM profile or re-register any keys; there is no need to rerun integrated setup (7). **Option 19** stops and disables this watcher without changing PAM or the separate lock-on-removal service.
+### Isolating a black screen after FIDO2 authentication
 
-**Mechanism:** when a USB FIDO2 device appears, this optional adapter checks that the local X11 session is locked according to logind, that exactly one `kscreenlocker_greet` process belongs to the current user, and that the X11 active window belongs to that greeter. Only then does it send a single Return key event to re-trigger the same PAM pathway that the user tested manually. A physical FIDO2 touch is still required before unlocking. Other windows must not receive the keystroke.
-
-**Risks and limitations:** this is a best-effort **X11 compatibility adapter**, **not a native KDE API**. The X server / KScreenLocker may reject synthetic keys or may not expose the greeter as the active window, in which case the watcher logs a skip. Sending Return may submit text the user already typed into a password field; it does not read that text. This feature is **not supported on Wayland**, not proven on KDE Plasma 6, and is not guaranteed across all Linux distributions. It must be enabled voluntarily and tested on the intended system; an external process cannot guarantee a universal, reliable lock-screen UI transition.
-
-**KScreenLocker detection (2026-11 update):** KDE deliberately disables ptrace on its greeter, so reading `/proc/<pid>/exe` and `/proc/<pid>/environ` may fail even for the desktop user. The watcher now checks the greeter's process name and UID, then **requires the X11 keyboard-focus window's `_NET_WM_PID` to match the greeter PID** and verifies the session remains locked before attempting its single XTEST Return event. The watcher does **not** modify KDE's ptrace protection. Some lock screens do not expose a focus-window PID or reject synthetic input; in those cases this integration deliberately skips the attempt and logs the reason. This remains **experimental** and cannot be promised to work across desktops and distributions.
-
-Diagnostics:
+1. Disable the experimental service as shown above.
+2. Lock with the token already plugged in and unlock by touching it. Compare against normal password unlock. Do **not** test after suspend or a display-mode switch at the same time.
+3. If the black screen persists **even with the watcher off**, examine the KDE/X11 and PAM logs; do not edit PAM blindly.
 
 ```bash
-# User-level watcher status / logs (run as the logged-in desktop user)
-systemctl --user status fido2-kde-retry.service
-journalctl --user -u fido2-kde-retry.service -f
-
-# Immediate rollback
-systemctl --user disable --now fido2-kde-retry.service
+journalctl -b --since "15 minutes ago" --no-pager |
+  grep -Ei 'kscreenlocker|pam_u2f|pam_kwallet|pam_ecryptfs|kwin_x11|plasmashell|sddm|xorg' |
+  tail -100
 ```
 
-**Testing sequence:** ensure the session still unlocks with the normal password; insert a key while unlocked (nothing should happen); remove the key; lock with Meta+L; insert the key while locked; watch for the FIDO2 touch challenge and unlock only by physically touching it. Disable the adapter if there are black screens or unexpected keyboard actions. Keep another session/TTY available for recovery. See KDE's documented PAM configuration caution.
-
-The rest of the manager and USB detection continue to use distribution-independent Linux tools (`pyudev`, `fido2-token`, PAM and systemd); the *retry integration* is specifically scoped to KDE Plasma on X11. Other desktops require different native adapters.
+The reported screen behavior has not yet been reproduced or attributed to a specific component. No automatic greeter or display-manager restart is attempted.
 
 ## Features
 
@@ -111,7 +111,7 @@ Option **07 installs the monitoring daemon but leaves lock-on-removal disabled b
 | 14 / 15 | Enable / disable lock on removal |
 | 16 | Read-only KDE key/PAM state diagnostics |
 | 17 | Live USB FIDO2 insertion/removal diagnostics |
-| 18 / 19 | Enable / disable experimental KDE X11 auto-retry watcher |
+| 18 / 19 | Enable / disable passive KDE X11 USB watcher |
 
 *The current terminal interface may display some menu text in French.*
 
@@ -249,7 +249,7 @@ fido2-guard/
 ├── fido2-guard.sh           # Terminal administration and setup menu
 ├── fido-removal-guard.py    # USB removal monitor; locks only
 ├── fido-hotplug.py         # Read-only event diagnostics
-├── fido-kde-x11-retry.py   # Optional experimental KDE X11 retry
+├── fido-kde-x11-retry.py   # Passive KDE X11 USB insertion monitor (no key injection)
 └── fido-tui.py             # Modern Textual TUI
 ```
 
