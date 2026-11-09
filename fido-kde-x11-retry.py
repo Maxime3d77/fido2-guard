@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""FIDO2 Guard v2.9 - opt-in KDE Plasma 5 X11 lock-screen FIDO retry.
+"""FIDO2 Guard v2.9 safety update: passive KDE X11 hotplug monitor.
 
-This is a guarded X11 compatibility adapter, NOT a native KScreenLocker API:
-- Does nothing on Wayland, when unlocked, or when active-window ownership cannot be verified.
-- Never calls an unlock API, writes credentials, or modifies PAM.
-- Sends one Return to the confirmed KScreenLocker greeter on FIDO2 USB insertion,
-  equivalent to the manually successful blank-field Enter workflow.
-- This may submit existing text in the focused field. Opt-in only; disable if unreliable.
+KDE's password entry can treat a synthetic Return as a failed password
+attempt. This monitor deliberately NEVER sends keyboard events or unlocks
+the session. The service keeps observing insertion/removal and reports the
+KDE state in the log. Authentication must still be initiated in the greeter.
+No PAM configuration or enrolled credentials are changed by this watcher.
 """
 import logging
 import os
@@ -149,43 +148,28 @@ def focused_greeter_window(xdotool, env, pid):
 
 
 def request_retry():
-    if not current_x11_session():
+    """Log the verified locked screen; never synthesize authentication input."""
+    session = current_x11_session()
+    if not session:
         return
     pid = verified_greeter_pid()
     if pid is None:
+        logging.info("FIDO2 inserted while X11 locked; greeter identity unavailable")
         return
-    env = x11_environment()
-    if env is None:
-        return
-    xdotool = shutil.which("xdotool")
-    if not xdotool:
-        logging.warning("xdotool unavailable")
-        return
-    window_id = focused_greeter_window(xdotool, env, pid)
-    if window_id is None:
-        return
-    # Verify both conditions immediately again before generating input.
-    if not current_x11_session() or focused_greeter_window(xdotool, env, pid) != window_id:
-        logging.info("Locked session/focus changed while checking; skip")
-        return
-    # XTEST sends a normal keyboard event through the existing X11 focus/grab.
-    # The physical security key must still be touched to authenticate via PAM.
-    result = run([xdotool, "key", "--clearmodifiers", "Return"], env=env)
-    if result is None or result.returncode:
-        logging.warning("Unable to send FIDO2 retry Enter via X11")
-    else:
-        logging.info("Sent one X11 Enter to verified focused KScreenLocker; touch still required")
+    logging.info(
+        "FIDO2 inserted while KDE is locked (session=%s, greeter=%s). "
+        "Safe monitoring mode: no Enter sent. Initiate PAM authentication "
+        "from the lock screen, then touch the key.", session, pid
+    )
 
 def main():
-    if not shutil.which("xdotool"):
-        raise SystemExit("Install xdotool to enable KDE X11 retry")
     known = discover()
     if known is None:
         raise SystemExit("Unable to enumerate FIDO2 devices")
     monitor = pyudev.Monitor.from_netlink(CTX)
     monitor.filter_by("usb")
     monitor.start()
-    logging.info("Watching USB insertions; existing tokens: %s; X11 only", len(known))
+    logging.info("Watching USB insertions; existing tokens: %s; safe monitoring only (no keyboard events)", len(known))
     last = 0.0
     try:
         while True:
