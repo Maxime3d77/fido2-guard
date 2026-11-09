@@ -27,11 +27,11 @@ A **Git pull alone does not replace** the installed script in `/usr/local/libexe
 ```bash
 cd ~/Documents/git/fido2-guard
 git pull --ff-only
-sudo install -m 755 fido-kde-x11-retry.py /usr/local/libexec/fido2-kde-x11-retry.py
+sudo install -m 755 fido-insertion-watch.py /usr/local/libexec/fido-insertion-watch.py
 systemctl --user restart fido2-kde-retry.service
 ```
 
-Or choose **18 — Enable KDE X11 insertion monitor (safe mode)** in the manager. **Option 19** disables it. Option 07 prepares the component without enabling it and does not require reenrolling keys when updating. The watcher does not need `xdotool` in safe monitoring mode.
+Or choose **18 — Enable portable USB insertion monitor (safe mode)** in the manager. **Option 19** disables it. Option 07 prepares the component without enabling it and does not require reenrolling keys when updating. The watcher does not need `xdotool` in safe monitoring mode.
 
 **KDE limitation:** While locked, a late-inserted FIDO2 token may not automatically restart an already-running PAM password conversation. On affected KDE builds, unlock using **a blank password field → Enter → physical FIDO2 touch**, or the normal Linux password. Automatic switching requires a native, tested KScreenLocker integration; a USB watcher alone cannot provide it. **Never weaken the KDE greeter's ptrace protections or disable the password fallback to force this feature.**
 
@@ -155,7 +155,7 @@ The KDE 5.27 lock screen does not provide an independently validated external AP
 
 ## Portable Linux compatibility (November 2026)
 
-FIDO2 Guard is a **single codebase**, but USB monitoring and lock-screen authentication are separate capabilities. The portable **passive USB insertion watcher** now runs under a user's systemd service on local **X11 or Wayland** sessions, using `pyudev`, `fido2-token` and `loginctl` without sending keyboard events. On existing installations the service is still named `fido2-kde-retry.service` for backward compatibility; its name does **not** mean automatic PAM retry is implemented.
+FIDO2 Guard is a **single codebase**, but USB monitoring and lock-screen authentication are separate capabilities. The portable **passive USB insertion watcher** now runs under a user's systemd service on local **X11 or Wayland** sessions, using `pyudev`, `fido2-token` and `loginctl` without sending keyboard events. On existing installations the service is still named `fido2-kde-retry.service` for backward compatibility; its name does **not** mean automatic PAM retry is implemented. The installed script has been renamed to `fido-insertion-watch.py`; select menu **18** once after updating to migrate the unit to the new script path and restart it.
 
 The new **Desktop compatibility report (menu 20)** can be invoked directly:
 
@@ -282,7 +282,8 @@ fido2-guard/
 ├── fido-removal-guard.py    # USB removal monitor; locks only
 ├── fido-hotplug.py         # Read-only event diagnostics
 ├── fido-platform.py        # Desktop capabilities across Linux distros
-├── fido-kde-x11-retry.py   # Portable passive USB monitor (legacy filename)
+├── fido-insertion-watch.py # Portable safe USB monitor (X11/Wayland)
+├── fido-kde-x11-retry.py   # Legacy passive monitor name (compatibility)
 └── fido-tui.py             # Modern Textual TUI
 ```
 
