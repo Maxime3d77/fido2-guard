@@ -37,6 +37,9 @@ def parse_monitors(output):
 
 def screen_layout():
     """X11 monitor count/names only, without grabbing screen contents."""
+    # xrandr under Wayland describes XWayland, not physical monitor layout.
+    if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+        return {"count": None, "names": [], "source": "wayland-not-probed"}
     if not os.environ.get("DISPLAY") or not shutil.which("xrandr"):
         return {"count": None, "names": [], "source": "unavailable"}
     output = run(["xrandr", "--listmonitors"])
