@@ -18,6 +18,6 @@ jobs:
       - name: Bash syntax
         run: bash -n fido2-guard.sh
       - name: Python compilation
-        run: python -m py_compile fido-platform.py fido-status.py fido-tui.py fido-hotplug.py fido-kde-x11-retry.py fido-removal-guard.py
+        run: python -m py_compile fido-platform.py fido-status.py fido-tui.py fido-hotplug.py fido-kde-x11-retry.py fido-insertion-watch.py fido-removal-guard.py
       - name: Run hardware-free tests
         run: python -m unittest discover -s tests -v
