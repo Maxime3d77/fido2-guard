@@ -684,8 +684,8 @@ kde_key_state_diagnostic(){
 }
 
 # v2.9: opt-in KDE Plasma X11 retry watcher. Never modifies PAM.
-RETRY_SRC="$SELF_DIR/fido-kde-x11-retry.py"
-RETRY_DST=/usr/local/libexec/fido2-kde-x11-retry.py
+RETRY_SRC="$SELF_DIR/fido-insertion-watch.py"
+RETRY_DST=/usr/local/libexec/fido-insertion-watch.py
 RETRY_UNIT_NAME=fido2-kde-retry.service
 user_systemctl(){
  local runtime="/run/user/$(id -u "$TARGET")"
@@ -695,7 +695,7 @@ user_systemctl(){
    systemctl --user "$@"
 }
 install_kde_retry(){
- [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-kde-x11-retry.py is missing.'; return 1; }
+ [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-insertion-watch.py is missing.'; return 1; }
  # Detect the logged-in account through SUDO_USER, not the caller's
  # desktop type. The passive USB watcher works on both X11 and Wayland.
  # Only systemd-logind based desktops are supported by this service.
