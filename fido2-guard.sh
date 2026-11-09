@@ -715,7 +715,7 @@ menu_choice(){
       read -r choice < "$selected" || choice=0
     fi
     rm -f "$selected"
-    [[ "$choice" =~ ^([1-9]|1[0-6])$ ]] || choice=0
+    [[ "$choice" =~ ^([1-9]|1[0-7])$ ]] || choice=0
     return 0
  fi
  local -a choices=(
@@ -735,6 +735,7 @@ menu_choice(){
    14 'Enable lock on key removal'
    15 'Disable lock on key removal'
    16 'Connected FIDO2 device / KDE diagnostics'
+   17 'Live FIDO2 USB hotplug diagnostics'
    0 'Exit'
  )
  local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
@@ -762,6 +763,9 @@ while true; do
  6) write_test_pam;; 7) guided_install;; 8) echo 'Pour configurer PAM avec les tests et la méthode de secours, utilise l’option 07.';; 9) rollback_kde_pam;;
  10) status;; 11) remove_guard;; 12) complete_purge;; 13) pam_diagnostic;;
  14) enable_guard;; 15) disable_guard;; 16) kde_key_state_diagnostic;;
+ 17) if [[ -f "$SELF_DIR/fido-hotplug.py" ]]; then
+        /usr/bin/python3 "$SELF_DIR/fido-hotplug.py" --watch
+      else echo 'fido-hotplug.py missing; update your Git checkout.'; fi;;
  *) echo 'Choix invalide';;
  esac; then echo 'Opération non terminée / vérifier les messages.'; fi
  pause
