@@ -546,7 +546,7 @@ ensure_kde_pam_auto(){
 }
 guided_install(){
  local service answer count_keys i active_before=0 had_pam=0 created_now=0
- echo '=== INSTALLATION INTÉGRÉE FIDO2 GUARD v2.8 ==='
+ echo '=== INSTALLATION INTÉGRÉE FIDO2 GUARD v2.9 ==='
  echo '1. Dépendances  2. Clés et toucher  3. PAM KDE  4. Mot de passe  5. Verrouillage'
  echo 'Le service ne déverrouille JAMAIS une session. Le toucher FIDO se fait dans KDE.'
  echo 'En cas d’échec, le verrouillage automatique reste arrêté.'
@@ -665,13 +665,84 @@ kde_key_state_diagnostic(){
  echo 'sinon utiliser le mot de passe. Le service ne déverrouille jamais la session.'
 }
 
+# v2.9: opt-in KDE Plasma X11 retry watcher. Never modifies PAM.
+RETRY_SRC="$SELF_DIR/fido-kde-x11-retry.py"
+RETRY_DST=/usr/local/libexec/fido2-kde-x11-retry.py
+RETRY_UNIT_NAME=fido2-kde-retry.service
+user_systemctl(){
+ local runtime="/run/user/$(id -u "$TARGET")"
+ [[ -S "$runtime/bus" ]] || { echo "User systemd bus is not available: $runtime/bus"; return 1; }
+ runuser -u "$TARGET" -- env XDG_RUNTIME_DIR="$runtime" \
+   DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
+   systemctl --user "$@"
+}
+install_kde_retry(){
+ [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-kde-x11-retry.py is missing.'; return 1; }
+ [[ "$XDG_SESSION_TYPE" == x11 ]] || { echo 'This compatibility watcher supports KDE X11 only (not Wayland).'; return 1; }
+ command -v xdotool >/dev/null || {
+   echo 'Installing xdotool dependency (KDE X11 only)...'
+   case "$PKG" in
+     apt) apt-get install -y xdotool || return 1 ;;
+     dnf) dnf install -y xdotool || return 1 ;;
+     pacman) pacman -S --needed xdotool || return 1 ;;
+     *) echo 'Install xdotool manually and retry.'; return 1 ;;
+   esac
+ }
+ /usr/bin/python3 -c 'import pyudev' || { echo 'python3-pyudev missing. Install dependencies (menu 1).'; return 1; }
+ /usr/bin/python3 -m py_compile "$RETRY_SRC" || return 1
+ install -d -o root -g root -m 755 /usr/local/libexec
+ install -o root -g root -m 755 "$RETRY_SRC" "$RETRY_DST"
+ local home unit_dir unit_file
+ home=$(getent passwd "$TARGET" | cut -d: -f6)
+ unit_dir="$home/.config/systemd/user"
+ unit_file="$unit_dir/$RETRY_UNIT_NAME"
+ install -d -o "$TARGET" -g "$(id -gn "$TARGET")" -m 755 "$unit_dir"
+ if [[ -f "$unit_file" ]]; then
+    cp -a "$unit_file" "$unit_file.bak.$(date +%Y%m%d%H%M%S)"
+ fi
+ cat > "$unit_file" <<EOF
+[Unit]
+Description=FIDO2 Guard v2.9 - KDE X11 insertion retry (opt-in)
+After=graphical-session.target
+PartOf=graphical-session.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 $RETRY_DST
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+[Install]
+WantedBy=graphical-session.target
+EOF
+ chown "$TARGET:$(id -gn "$TARGET")" "$unit_file"
+ chmod 644 "$unit_file"
+ user_systemctl daemon-reload || return 1
+ echo 'KDE X11 retry watcher files installed. PAM and existing keys unchanged.'
+}
+enable_kde_retry(){
+ echo 'EXPERIMENTAL KDE 5 X11 AUTO-RETRY.'
+ echo 'Insertion sends one Return only if the locked greeter owns the active window.'
+ echo 'It can submit previously typed text. No guarantee on every KDE/X11 theme.'
+ echo 'Password fallback stays enabled. No automatic unlock is performed.'
+ read -r -p 'Type ENABLE X11 RETRY to opt in: ' answer
+ [[ "$answer" == 'ENABLE X11 RETRY' ]] || { echo 'Cancelled'; return 0; }
+ install_kde_retry || return 1
+ user_systemctl enable --now "$RETRY_UNIT_NAME" || return 1
+ user_systemctl is-active "$RETRY_UNIT_NAME" || return 1
+ echo 'Watcher enabled. Test after locking, and watch journalctl --user.'
+}
+disable_kde_retry(){
+ user_systemctl disable --now "$RETRY_UNIT_NAME" 2>/dev/null || :
+ echo 'KDE X11 auto-retry disabled. PAM, keys and removal locking untouched.'
+}
+
 show_header(){
  clear 2>/dev/null || :
  local svc=DISABLED pam=INACTIVE
  systemctl -q is-active thetis-guard.service && svc=ACTIVE
  [[ -f "$PAM_TARGET_META" ]] && pam=MODIFIED
  printf '\033[1;36m╔══════════════════════════════════════════════════════════════════╗\n'
- printf '║                   FIDO2 GUARD  v2.8                            ║\n'
+ printf '║                   FIDO2 GUARD  v2.9                            ║\n'
  printf '║           Linux security key manager                     ║\n'
  printf '╚══════════════════════════════════════════════════════════════════╝\033[0m\n'
  printf '  System : %-18s  Packages : %-10s\n' "$OS_ID" "$PKG"
@@ -715,7 +786,7 @@ menu_choice(){
       read -r choice < "$selected" || choice=0
     fi
     rm -f "$selected"
-    [[ "$choice" =~ ^([1-9]|1[0-7])$ ]] || choice=0
+    [[ "$choice" =~ ^([1-9]|1[0-9])$ ]] || choice=0
     return 0
  fi
  local -a choices=(
@@ -736,6 +807,8 @@ menu_choice(){
    15 'Disable lock on key removal'
    16 'Connected FIDO2 device / KDE diagnostics'
    17 'Live FIDO2 USB hotplug diagnostics'
+   18 'Install / enable KDE X11 insertion retry (opt-in)'
+   19 'Disable KDE X11 insertion retry'
    0 'Exit'
  )
  local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
@@ -763,6 +836,7 @@ while true; do
  6) write_test_pam;; 7) guided_install;; 8) echo 'Pour configurer PAM avec les tests et la méthode de secours, utilise l’option 07.';; 9) rollback_kde_pam;;
  10) status;; 11) remove_guard;; 12) complete_purge;; 13) pam_diagnostic;;
  14) enable_guard;; 15) disable_guard;; 16) kde_key_state_diagnostic;;
+ 18) enable_kde_retry;; 19) disable_kde_retry;;
  17) if [[ -f "$SELF_DIR/fido-hotplug.py" ]]; then
         /usr/bin/python3 "$SELF_DIR/fido-hotplug.py" --watch
       else echo 'fido-hotplug.py missing; update your Git checkout.'; fi;;
