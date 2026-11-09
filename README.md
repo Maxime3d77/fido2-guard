@@ -153,6 +153,14 @@ Unplug and reinsert your security key. The output should include `REMOVED` and `
 
 The KDE 5.27 lock screen does not provide an independently validated external API for safely replacing an already-active password prompt with an FIDO2 prompt. Delivering this specific UX requires a separately developed and tested KScreenLocker integration, with version-specific handling for Plasma 5 and 6. **Do not run the integrated setup repeatedly to fix this behavior.**
 
+## LightDM and encrypted home warning
+
+The dashboard distinguishes KDE **screen unlock** from **initial desktop login** and detects the active display manager through systemd (do not assume SDDM just because the desktop is KDE). For an eCryptfs home, it shows **PASSWORD REQUIRED FOR ECRYPTFS** because `pam_ecryptfs.so unwrap` normally needs the login password to unwrap the home-directory mount passphrase.
+
+Do not insert `pam_u2f.so sufficient` into LightDM or shared `common-auth` merely to bypass a login prompt: a passwordless PAM success does not provide the secret required by eCryptfs. The manager does not automatically modify the display-manager PAM stack. It keeps FIDO2 for KDE **lock-screen** authentication after the home has been mounted.
+
+The status checker queries user systemd using `setpriv` (from util-linux) to avoid opening repeated PAM sessions via `runuser` every time the dashboard refreshes. Missing `setpriv` is reported in the health status instead of silently creating PAM log noise.
+
 ## Configuration health dashboard (v2.9)
 
 The top of the full-screen terminal UI now displays a **read-only health overview**:
