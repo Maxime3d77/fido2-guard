@@ -102,7 +102,7 @@ class GuardUI(App):
                 yield Static("SELECT AN ACTION", id="detail_title")
                 yield Static("NAVIGATION", id="detail_group")
                 yield Static("↑ ↓  Move selection\nEnter  Run selected action\n/  Search\nEsc  Quit", id="detail_text")
-                yield Static("USB presence never unlocks a session without PAM authentication.", id="notice")
+                yield Static("Safe monitor only. KDE auto-switch is disabled; use blank-field Enter + FIDO2 touch.", id="notice")
         yield Static("↑↓ Navigate   •   Enter Select   •   / Search   •   Esc Quit", id="help")
         yield Footer()
 
