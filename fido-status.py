@@ -148,10 +148,6 @@ def main():
     if not retry_path.exists() and retry["state"] != "ACTIVE":
         retry = {"state": "MISSING", "detail": "Not installed; menu 18 installs and enables (KDE X11 only)"}
     issues = []
-    if platform.get("auto_retry") in ("NOT_IMPLEMENTED", "NOT_VERIFIED"):
-        issues.append("Automatic FIDO2 switch is not supported/validated for this desktop")
-    if login["ecryptfs"]:
-        issues.append("First login: use your Linux password to unlock eCryptfs (FIDO touch alone is insufficient)")
     if deps["state"] != "READY":
         issues.append("Install missing dependencies (1)")
     if keys["state"] != "CONFIGURED":
@@ -164,6 +160,8 @@ def main():
         issues.append("Optional: KDE X11 insertion watcher disabled (18)")
     if lock["state"] == "DISABLED":
         issues.append("Optional: USB removal locking disabled (14)")
+    if login["ecryptfs"]:
+        issues.append("First login: use your Linux password to unlock eCryptfs")
     overall = "ACTION NEEDED" if any(x["state"] not in ("CONFIGURED", "READY") for x in (keys, pam, deps)) else "KDE CONFIGURED"
     print(json.dumps({"overall": overall, "keys": keys, "pam": pam, "dependencies": deps,
                       "removal": lock, "retry": retry, "login": login, "platform": platform,
