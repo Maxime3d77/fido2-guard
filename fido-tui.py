@@ -30,6 +30,7 @@ ACTIONS = [
     ("14", "Enable lock on key removal", "MONITORING", "Lock the session when a recognized USB FIDO2 device is removed."),
     ("15", "Disable lock on key removal", "MONITORING", "Keep PAM and keys; stop the monitoring daemon."),
     ("16", "Connected key and KDE status", "DIAGNOSTICS", "Check USB detection and PAM U2F rule without unlocking."),
+    ("17", "Live FIDO2 insertion / removal monitor", "DIAGNOSTICS", "Stream real USB token changes. Read-only; cannot restart KDE authentication."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
