@@ -76,33 +76,53 @@ def current_x11_session():
     return None
 
 def greeter_environment():
-    """Identify a single greeter *belonging to this user* and its X11 display."""
+    """Find exactly one greeter for this user; log sanitized reasons for rejects.
+
+    /proc/<pid>/comm is limited to 15 bytes, and distributions may launch
+    KScreenLocker with a wrapper. Verification requires the executable basename
+    to be kscreenlocker_greet; no trust in argv or window titles alone.
+    """
     candidates = []
+    inspected = []
     for directory in Path("/proc").iterdir():
         if not directory.name.isdigit():
             continue
         try:
-            if directory.stat().st_uid != UID:
-                continue
             process = (directory / "comm").read_text().strip()
-            if process != "kscreenlocker_g" and process != "kscreenlocker_greet":
+            if not process.startswith("kscreenlocker"):
                 continue
-            exe = os.readlink(directory / "exe")
-            if Path(exe).name != "kscreenlocker_greet":
+            pid = int(directory.name)
+            owner = directory.stat().st_uid
+            try:
+                executable = os.readlink(directory / "exe")
+            except OSError:
+                executable = "<unreadable>"
+            if owner != UID:
+                inspected.append(f"pid={pid} uid={owner} comm={process} (different user)")
                 continue
-            items = (directory / "environ").read_bytes().split(b"\0")
+            if Path(executable.removesuffix(" (deleted)")).name != "kscreenlocker_greet":
+                inspected.append(f"pid={pid} comm={process} exe={Path(executable).name} (not greeter)")
+                continue
+            try:
+                items = (directory / "environ").read_bytes().split(b"\\0")
+            except OSError as error:
+                inspected.append(f"pid={pid} greeter environment unreadable ({type(error).__name__})")
+                continue
             values = {}
             for item in items:
                 key, sep, value = item.partition(b"=")
                 if sep and key in (b"DISPLAY", b"XAUTHORITY"):
                     values[key.decode()] = value.decode(errors="replace")
             if not values.get("DISPLAY", "").startswith(":"):
+                inspected.append(f"pid={pid} greeter missing X11 DISPLAY")
                 continue
-            candidates.append((int(directory.name), values))
+            candidates.append((pid, values))
+            inspected.append(f"pid={pid} greeter accepted")
         except (OSError, UnicodeError, ValueError):
             continue
     if len(candidates) != 1:
-        logging.info("Expected one own KScreenLocker process; found %d", len(candidates))
+        logging.info("Expected exactly one own KScreenLocker greeter; found %d. /proc details: %s",
+                     len(candidates), "; ".join(inspected) or "no process with KScreenLocker comm found")
         return None
     return candidates[0]
 
