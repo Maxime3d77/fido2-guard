@@ -381,7 +381,7 @@ status(){
  [[ -f "$pam_target" ]] && grep -Fq "$MARK" "$pam_target" && echo "PAM KDE v2: actif ($pam_target)" || echo 'PAM KDE v2: non confirmé / inactif'
  journalctl -u thetis-guard.service -n 12 --no-pager 2>/dev/null || :
  echo
- echo 'KDE X11 HOTPLUG MONITOR (no automatic Enter):'
+ echo 'USB HOTPLUG MONITOR (no automatic Enter):'
  local retry_unit_path="$USER_HOME/.config/systemd/user/fido2-kde-retry.service"
  if [[ -f "$retry_unit_path" ]]; then
    echo 'Unit: INSTALLED'
@@ -626,21 +626,17 @@ guided_install(){
    return 1
  fi
  echo
- echo 'Installing the optional KDE X11 retry watcher (DISABLED by default)...'
- if [[ "${XDG_SESSION_TYPE:-}" == x11 ]]; then
-   if install_kde_retry; then
-      echo 'KDE X11 passive insertion monitor installed. Menu 18 enables it; menu 19 disables it.'
-   else
-      echo 'Warning: KDE X11 watcher installation failed. PAM and key mappings are unchanged.'
-   fi
+ echo 'Installing the optional Linux USB insertion monitor (DISABLED by default)...'
+ if install_kde_retry; then
+    echo 'Portable insertion monitor installed but DISABLED. Menu 18 enables it.'
  else
-   echo 'KDE X11 watcher skipped: non-X11 or unknown session. Use menu 18 from an X11 session.'
+    echo 'WARNING: USB insertion monitor could not be installed; PAM and keys unchanged.'
  fi
  echo
  echo 'INTEGRATED INSTALLATION FINISHED.'
  echo 'Test physical FIDO2 touch and the Linux password on the actual KDE lock screen.'
  echo '14 / 15: enable / disable locking when a USB key is removed.'
- echo '18 / 19: enable / disable passive FIDO2 insertion monitor (KDE X11 only).'
+ echo '18 / 19: enable / disable portable FIDO2 insertion monitor (Linux with systemd).'
 }
 
 kde_key_state_diagnostic(){
@@ -700,25 +696,15 @@ user_systemctl(){
 }
 install_kde_retry(){
  [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-kde-x11-retry.py is missing.'; return 1; }
- # sudo may unset XDG_SESSION_TYPE; inspect the target user's real logind session.
- local session_id session_props session_type session_active session_remote found_x11=0
- while read -r session_id _; do
-   [[ -n "$session_id" ]] || continue
-   session_props=$(loginctl show-session "$session_id" -p Type -p Active -p Remote --no-pager 2>/dev/null) || continue
-   session_type=$(printf '%s\n' "$session_props" | sed -n 's/^Type=//p')
-   session_active=$(printf '%s\n' "$session_props" | sed -n 's/^Active=//p')
-   session_remote=$(printf '%s\n' "$session_props" | sed -n 's/^Remote=//p')
-   if [[ "$session_type" == x11 && "$session_active" == yes && "$session_remote" == no ]]; then
-     found_x11=1
-     echo "Detected active local X11 session $session_id for $TARGET (via loginctl)."
-     break
-   fi
- done < <(loginctl list-sessions --no-legend --no-pager 2>/dev/null | awk -v uid="$(id -u "$TARGET")" '$2==uid {print $1}')
- if (( ! found_x11 )); then
-   echo "ERROR: No active local X11 session found for $TARGET."
-   echo "Available sessions for this account:"
-   loginctl list-sessions --no-pager 2>/dev/null | grep -F "$TARGET" || :
-   echo 'Launch the manager with sudo from the logged-in KDE X11 desktop.'
+ # Detect the logged-in account through SUDO_USER, not the caller's
+ # desktop type. The passive USB watcher works on both X11 and Wayland.
+ # Only systemd-logind based desktops are supported by this service.
+ if ! command -v loginctl >/dev/null 2>&1; then
+   echo 'ERROR: systemd-logind is required for this user service.'
+   return 1
+ fi
+ if [[ ! -S "/run/user/$(id -u "$TARGET")/bus" ]]; then
+   echo "ERROR: user systemd bus unavailable for $TARGET."
    return 1
  fi
  /usr/bin/python3 -c 'import pyudev' || { echo 'python3-pyudev missing. Install dependencies (menu 1).'; return 1; }
@@ -735,7 +721,7 @@ install_kde_retry(){
  fi
  cat > "$unit_file" <<EOF
 [Unit]
-Description=FIDO2 Guard v2.9 - KDE X11 insertion monitor (safe mode)
+Description=FIDO2 Guard v2.9 - portable USB FIDO2 monitor (safe mode)
 After=graphical-session.target
 PartOf=graphical-session.target
 [Service]
@@ -750,12 +736,12 @@ EOF
  chown "$TARGET:$(id -gn "$TARGET")" "$unit_file"
  chmod 644 "$unit_file"
  user_systemctl daemon-reload || return 1
- echo 'KDE X11 USB insertion monitor installed. No synthetic Enter is sent; PAM and keys unchanged.'
+ echo 'USB insertion monitor installed for the desktop user. No keyboard events; PAM and keys unchanged.'
 }
 enable_kde_retry(){
  echo
- echo '=== KDE X11: FIDO2 HOTPLUG MONITOR (SAFE MODE) ==='
- echo 'This service detects key insertion while KDE is locked and records diagnostics.'
+ echo '=== LINUX: FIDO2 HOTPLUG MONITOR (SAFE MODE) ==='
+ echo 'This service observes key insertion/removal on Linux X11 and Wayland sessions.'
  echo 'It does NOT send Enter or unlock: that previous experiment caused failed password attempts.'
  echo 'Manual unlock remains: insert key, press Enter on a blank field, then touch the key.'
  echo 'The original PAM configuration and password fallback are preserved.'
@@ -787,7 +773,7 @@ enable_kde_retry(){
 }
 disable_kde_retry(){
  user_systemctl disable --now "$RETRY_UNIT_NAME" 2>/dev/null || :
- echo 'KDE X11 insertion monitor disabled. PAM, keys and removal locking untouched.'
+ echo 'Linux insertion monitor disabled. PAM, keys and removal locking untouched.'
 }
 
 show_header(){
@@ -840,7 +826,7 @@ menu_choice(){
       read -r choice < "$selected" || choice=0
     fi
     rm -f "$selected"
-    [[ "$choice" =~ ^([1-9]|1[0-9])$ ]] || choice=0
+    [[ "$choice" =~ ^([1-9]|1[0-9]|20)$ ]] || choice=0
     return 0
  fi
  local -a choices=(
@@ -861,8 +847,9 @@ menu_choice(){
    15 'Disable lock on key removal'
    16 'Connected FIDO2 device / KDE diagnostics'
    17 'Live FIDO2 USB hotplug diagnostics'
-   18 'Enable KDE X11 insertion monitor (safe mode)'
-   19 'Disable KDE X11 insertion monitor'
+   18 'Enable Linux FIDO2 insertion monitor (safe mode)'
+   19 'Disable Linux FIDO2 insertion monitor'
+   20 'Show desktop and FIDO2 compatibility report'
    0 'Exit'
  )
  local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
@@ -891,6 +878,7 @@ while true; do
  10) status;; 11) remove_guard;; 12) complete_purge;; 13) pam_diagnostic;;
  14) enable_guard;; 15) disable_guard;; 16) kde_key_state_diagnostic;;
  18) enable_kde_retry;; 19) disable_kde_retry;;
+ 20) /usr/bin/python3 "$SELF_DIR/fido-platform.py" --user "$TARGET";;
  17) if [[ -f "$SELF_DIR/fido-hotplug.py" ]]; then
         /usr/bin/python3 "$SELF_DIR/fido-hotplug.py" --watch
       else echo 'fido-hotplug.py missing; update your Git checkout.'; fi;;
