@@ -73,6 +73,7 @@ Option **07 installs the monitoring daemon but leaves lock-on-removal disabled b
 | 12 | Full removal with explicit confirmation and backup |
 | 14 / 15 | Enable / disable lock on removal |
 | 16 | Read-only KDE key/PAM state diagnostics |
+| 17 | Live USB FIDO2 insertion/removal diagnostics |
 
 *The current terminal interface may display some menu text in French.*
 
@@ -97,6 +98,22 @@ sudo bash fido2-guard.sh
 # Select "Connected key and KDE status" (option 16).
 # Verify the real KDE login and lock screens separately.
 ```
+
+## Live USB FIDO2 hotplug diagnostics
+
+Use **menu option 17 — Live FIDO2 USB hotplug diagnostics** to observe actual insertion and removal events on Linux, without modifying PAM or the lock screen. This is a useful first check when testing Thetis and YubiKey devices across supported Linux distributions.
+
+Direct command (from your Git clone):
+
+```bash
+sudo /usr/bin/python3 fido-hotplug.py --watch
+```
+
+Unplug and reinsert your security key. The output should include `REMOVED` and `INSERTED` for recognized USB FIDO2 devices. Press Ctrl+C to stop. The tool uses `fido2-token` and `python3-pyudev`, not a distribution-specific USB polling loop. NFC authenticators are not included.
+
+**This is a diagnostic watcher, not an automatic KDE authenticator.** USB detection proves only that a FIDO2 device is connected, not that it matches a registered PAM credential. The watcher cannot terminate or restart an existing PAM conversation in KScreenLocker, and it never unlocks a session.
+
+The KDE 5.27 lock screen does not provide an independently validated external API for safely replacing an already-active password prompt with an FIDO2 prompt. Delivering this specific UX requires a separately developed and tested KScreenLocker integration, with version-specific handling for Plasma 5 and 6. **Do not run the integrated setup repeatedly to fix this behavior.**
 
 ## Modern terminal dashboard
 
