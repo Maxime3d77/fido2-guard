@@ -1,4 +1,4 @@
-# FIDO2 Guard — v2.8
+# FIDO2 Guard — v2.9
 
 A Linux **FIDO2/U2F security key manager** with PAM authentication for KDE Plasma and **optional automatic screen locking when a USB FIDO2 key is removed**.
 
@@ -11,6 +11,37 @@ A Linux **FIDO2/U2F security key manager** with PAM authentication for KDE Plasm
 Menu **16 — KDE / FIDO2 state diagnostics** checks for detected FIDO devices, registered key count, and whether the KDE PAM profile has a touch-required U2F rule. It is read-only and does not authenticate, unlock, or send keystrokes. This is a diagnostic step toward a future KDE integration rather than the final adaptive UI.
 
 If PAM is already prompting for a touch, touch the key; otherwise use the regular password. The existing password fallback remains available. A true automatic UI transition requires validated changes to KScreenLocker/Plasma that can restart PAM authentication safely when a key arrives, including correct behavior across X11 and Wayland.
+
+## v2.9 — KDE Plasma 5 X11 auto-retry watcher (experimental)
+
+**Existing installations:** update the checkout and launch the manager:
+
+```bash
+cd ~/Documents/git/fido2-guard
+git pull --ff-only
+sudo bash fido2-guard.sh
+```
+
+Select **18 — Enable KDE X11 FIDO auto-retry (experimental)**. This option installs `fido-kde-x11-retry.py` under `/usr/local/libexec`, sets up a **user-level systemd service**, and offers to install the `xdotool` dependency. When prompted, enter **`ENABLE X11 RETRY`**. It **does not overwrite** the existing PAM profile or re-register any keys; there is no need to rerun integrated setup (7). **Option 19** stops and disables this watcher without changing PAM or the separate lock-on-removal service.
+
+**Mechanism:** when a USB FIDO2 device appears, this optional adapter checks that the local X11 session is locked according to logind, that exactly one `kscreenlocker_greet` process belongs to the current user, and that the X11 active window belongs to that greeter. Only then does it send a single Return key event to re-trigger the same PAM pathway that the user tested manually. A physical FIDO2 touch is still required before unlocking. Other windows must not receive the keystroke.
+
+**Risks and limitations:** this is a best-effort **X11 compatibility adapter**, **not a native KDE API**. The X server / KScreenLocker may reject synthetic keys or may not expose the greeter as the active window, in which case the watcher logs a skip. Sending Return may submit text the user already typed into a password field; it does not read that text. This feature is **not supported on Wayland**, not proven on KDE Plasma 6, and is not guaranteed across all Linux distributions. It must be enabled voluntarily and tested on the intended system; an external process cannot guarantee a universal, reliable lock-screen UI transition.
+
+Diagnostics:
+
+```bash
+# User-level watcher status / logs (run as the logged-in desktop user)
+systemctl --user status fido2-kde-retry.service
+journalctl --user -u fido2-kde-retry.service -f
+
+# Immediate rollback
+systemctl --user disable --now fido2-kde-retry.service
+```
+
+**Testing sequence:** ensure the session still unlocks with the normal password; insert a key while unlocked (nothing should happen); remove the key; lock with Meta+L; insert the key while locked; watch for the FIDO2 touch challenge and unlock only by physically touching it. Disable the adapter if there are black screens or unexpected keyboard actions. Keep another session/TTY available for recovery. See KDE's documented PAM configuration caution.
+
+The rest of the manager and USB detection continue to use distribution-independent Linux tools (`pyudev`, `fido2-token`, PAM and systemd); the *retry integration* is specifically scoped to KDE Plasma on X11. Other desktops require different native adapters.
 
 ## Features
 
@@ -74,6 +105,7 @@ Option **07 installs the monitoring daemon but leaves lock-on-removal disabled b
 | 14 / 15 | Enable / disable lock on removal |
 | 16 | Read-only KDE key/PAM state diagnostics |
 | 17 | Live USB FIDO2 insertion/removal diagnostics |
+| 18 / 19 | Enable / disable experimental KDE X11 auto-retry watcher |
 
 *The current terminal interface may display some menu text in French.*
 
@@ -195,7 +227,10 @@ This project has **not undergone a security audit** and is not a replacement for
 fido2-guard/
 ├── README.md
 ├── fido2-guard.sh           # Terminal administration and setup menu
-└── fido-removal-guard.py    # USB removal monitor; locks only
+├── fido-removal-guard.py    # USB removal monitor; locks only
+├── fido-hotplug.py         # Read-only event diagnostics
+├── fido-kde-x11-retry.py   # Optional experimental KDE X11 retry
+└── fido-tui.py             # Modern Textual TUI
 ```
 
-**Version:** 2.8. **License:** No redistribution license has been explicitly granted until a LICENSE file is added.
+**Version:** 2.9. **License:** No redistribution license has been explicitly granted until a LICENSE file is added.
