@@ -33,8 +33,9 @@ ACTIONS = [
     ("15", "Disable lock on key removal", "MONITORING", "Keep PAM and keys; stop the monitoring daemon."),
     ("16", "Connected key and KDE status", "DIAGNOSTICS", "Check USB detection and PAM U2F rule without unlocking."),
     ("17", "Live FIDO2 insertion / removal monitor", "DIAGNOSTICS", "Stream real USB token changes. Read-only; cannot restart KDE authentication."),
-    ("18", "Enable KDE X11 hotplug monitor (safe)", "KDE X11", "Observe USB changes without sending Enter or changing PAM."),
-    ("19", "Disable KDE X11 hotplug monitor", "KDE X11", "Stop the optional USB monitor; password fallback is unchanged."),
+    ("18", "Enable portable USB hotplug monitor (safe)", "MONITORING", "Observe FIDO USB events on systemd Linux desktops, including X11 and Wayland; no automatic unlock."),
+    ("19", "Disable USB hotplug monitor", "MONITORING", "Stop the optional USB monitor; password fallback is unchanged."),
+    ("20", "Desktop compatibility report", "DIAGNOSTICS", "Detect KDE 5/6, X11/Wayland, login manager and eCryptfs; explain features not yet supported."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
@@ -46,10 +47,10 @@ class GuardUI(App):
     Screen { background: #0b1320; color: #e4edf9; }
     Header { background: #101f34; color: #7fc4fc; }
     Footer { background: #101f34; }
-    #hero { dock: top; height: 11; padding: 0 2; background: #10243a; color: #d7ebff; }
+    #hero { dock: top; height: 12; padding: 0 2; background: #10243a; color: #d7ebff; }
     #hero_title { text-style: bold; color: #80c8ff; height: 1; }
     #hero_status { color: #b2c6db; height: 1; }
-    #health { height: 5; color: #d9edf8; }
+    #health { height: 6; color: #d9edf8; }
     #remediation { height: 2; color: #facb7a; }
     #health .green { color: #7ce1ba; }
     #health .yellow { color: #ffce84; }
@@ -139,11 +140,16 @@ class GuardUI(App):
         display = str(login.get("display", "UNKNOWN"))
         fstype = str(login.get("fstype", "UNKNOWN"))
         login_note = "[yellow]PASSWORD REQUIRED FOR ECRYPTFS[/]" if login.get("ecryptfs") else "login not validated"
+        platform = data.get("platform", {})
+        version = str(platform.get("plasma", {}).get("version") or "?")
+        session_type = str(platform.get("session", {}).get("type", "unknown"))
+        auto = str(platform.get("auto_retry", "UNKNOWN"))
         lines = [
             f"{data.get('overall', 'UNKNOWN')}  •  " + indicator("dependencies", "Packages"),
             indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE unlock PAM"),
             f"Login: {display}   •   Home: {fstype}   •   {login_note}",
             indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion monitor"),
+            f"KDE {version} / {session_type}   •   [yellow]Auto-switch: {auto}[/]",
         ]
         self.query_one("#health", Static).update("\n".join(lines))
         advice = data.get("advice", [])
