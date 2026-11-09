@@ -153,6 +153,26 @@ Unplug and reinsert your security key. The output should include `REMOVED` and `
 
 The KDE 5.27 lock screen does not provide an independently validated external API for safely replacing an already-active password prompt with an FIDO2 prompt. Delivering this specific UX requires a separately developed and tested KScreenLocker integration, with version-specific handling for Plasma 5 and 6. **Do not run the integrated setup repeatedly to fix this behavior.**
 
+## Intermittent multi-monitor black screens: safe tracing (menu 21)
+
+On KDE Plasma 5.27 with three monitors, **0/5 password and 0/5 FIDO2 black-screen occurrences** in a short test do not prove the intermittent problem is fixed or caused by FIDO2. Existing KDE multi-monitor/U2F reports warrant evidence collection rather than replacing PAM or modifying system QML.
+
+A safe, cross-distro trace is available as **menu 21**. The menu prints a command to run from the desktop user's terminal (without `sudo`):
+
+```bash
+cd ~/Documents/git/fido2-guard
+python3 fido-lock-trace.py --seconds 120
+```
+
+Lock and unlock your desktop while the command is running. The trace remains active while the desktop is locked. Return to the terminal and press Ctrl+C to save it early. Files are written with restrictive permissions to `~/.local/state/fido2-guard/diagnostics/`:
+
+- `lock-*.jsonl` records timestamps, session type, logind's `LockedHint` (which may be stale), the PIDs of relevant desktop processes, and screen names/counts from `xrandr --listmonitors` on **X11**.
+- `lock-*.journal.txt` contains relevant lines from the **current user's** systemd journal; it does not grant access to root-only PAM or GPU logs. Review/redact user-local paths before sharing.
+
+On **Wayland**, `xrandr` describes XWayland rather than physical displays, so screen count is reported as unavailable instead of showing misleading values. No screenshots, input capture, security keys' private data or PAM configuration are collected. It never unlocks the session or injects keyboard events.
+
+For an incident, keep the saved trace and correlate it with the time of the blank screen. If needed, collect system journal separately with `sudo journalctl -b --since "..." --no-pager` and carefully redact it. Do **not** forcibly quit or kill KScreenLocker, and do **not** inject `Enter` automatically: both would risk bypass or failed-login issues. The root cause of the intermittent black screen is **not yet confirmed**, and the automatic FIDO2 reinsertion reauthentication on Plasma 5 is **not implemented**.
+
 ## Portable Linux compatibility (November 2026)
 
 FIDO2 Guard is a **single codebase**, but USB monitoring and lock-screen authentication are separate capabilities. The portable **passive USB insertion watcher** now runs under a user's systemd service on local **X11 or Wayland** sessions, using `pyudev`, `fido2-token` and `loginctl` without sending keyboard events. On existing installations the service is still named `fido2-kde-retry.service` for backward compatibility; its name does **not** mean automatic PAM retry is implemented. The installed script has been renamed to `fido-insertion-watch.py`; select menu **18** once after updating to migrate the unit to the new script path and restart it.
@@ -283,6 +303,7 @@ fido2-guard/
 ├── fido-hotplug.py         # Read-only event diagnostics
 ├── fido-platform.py        # Desktop capabilities across Linux distros
 ├── fido-insertion-watch.py # Portable safe USB monitor (X11/Wayland)
+├── fido-lock-trace.py     # Passive KDE/Linux multi-monitor lock diagnostic
 ├── fido-kde-x11-retry.py   # Legacy passive monitor name (compatibility)
 └── fido-tui.py             # Modern Textual TUI
 ```
