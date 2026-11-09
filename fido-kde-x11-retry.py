@@ -75,88 +75,106 @@ def current_x11_session():
     logging.info("No verified locked X11 logind session; inspected: %s", "; ".join(seen) or "none")
     return None
 
-def greeter_environment():
-    """Find exactly one greeter for this user; log sanitized reasons for rejects.
+def verified_greeter_pid():
+    """Find KScreenLocker by UID + process identity without ptrace.
 
-    /proc/<pid>/comm is limited to 15 bytes, and distributions may launch
-    KScreenLocker with a wrapper. Verification requires the executable basename
-    to be kscreenlocker_greet; no trust in argv or window titles alone.
+    KDE calls PR_SET_DUMPABLE(0) on the greeter, intentionally denying
+    /proc/<pid>/exe and /proc/<pid>/environ reads. Never try to defeat that
+    protection. We additionally require X11 focus's _NET_WM_PID to match.
     """
     candidates = []
-    inspected = []
     for directory in Path("/proc").iterdir():
         if not directory.name.isdigit():
             continue
         try:
-            process = (directory / "comm").read_text().strip()
-            if not process.startswith("kscreenlocker"):
+            if directory.stat().st_uid != UID:
+                continue
+            comm = (directory / "comm").read_text().strip()
+            if comm not in ("kscreenlocker_g", "kscreenlocker_greet"):
                 continue
             pid = int(directory.name)
-            owner = directory.stat().st_uid
             try:
                 executable = os.readlink(directory / "exe")
+            except PermissionError:
+                logging.info("KScreenLocker PID=%s has protected /proc/exe (normal KDE security); using X11 focus PID verification", pid)
             except OSError:
-                executable = "<unreadable>"
-            if owner != UID:
-                inspected.append(f"pid={pid} uid={owner} comm={process} (different user)")
-                continue
-            if Path(executable.removesuffix(" (deleted)")).name != "kscreenlocker_greet":
-                inspected.append(f"pid={pid} comm={process} exe={Path(executable).name} (not greeter)")
-                continue
-            try:
-                items = (directory / "environ").read_bytes().split(b"\\0")
-            except OSError as error:
-                inspected.append(f"pid={pid} greeter environment unreadable ({type(error).__name__})")
-                continue
-            values = {}
-            for item in items:
-                key, sep, value = item.partition(b"=")
-                if sep and key in (b"DISPLAY", b"XAUTHORITY"):
-                    values[key.decode()] = value.decode(errors="replace")
-            if not values.get("DISPLAY", "").startswith(":"):
-                inspected.append(f"pid={pid} greeter missing X11 DISPLAY")
-                continue
-            candidates.append((pid, values))
-            inspected.append(f"pid={pid} greeter accepted")
+                logging.info("KScreenLocker PID=%s /proc/exe inaccessible; using X11 focus PID verification", pid)
+            else:
+                if Path(executable.removesuffix(" (deleted)")).name != "kscreenlocker_greet":
+                    logging.info("Rejecting PID=%s: unexpected executable %s", pid, Path(executable).name)
+                    continue
+            candidates.append(pid)
         except (OSError, UnicodeError, ValueError):
             continue
     if len(candidates) != 1:
-        logging.info("Expected exactly one own KScreenLocker greeter; found %d. /proc details: %s",
-                     len(candidates), "; ".join(inspected) or "no process with KScreenLocker comm found")
+        logging.info("Expected one own KScreenLocker greeter; found %d", len(candidates))
         return None
     return candidates[0]
 
+
+def x11_environment():
+    """Use the logged-in user's X11 session environment, not protected /proc."""
+    env = os.environ.copy()
+    if not env.get("DISPLAY") or not env.get("XAUTHORITY"):
+        inherited = run(["systemctl", "--user", "show-environment"])
+        if inherited and inherited.returncode == 0:
+            for line in inherited.stdout.splitlines():
+                key, sep, value = line.partition("=")
+                if sep and key in ("DISPLAY", "XAUTHORITY") and not env.get(key):
+                    env[key] = value
+    if not env.get("DISPLAY", "").startswith(":"):
+        logging.info("No local X11 DISPLAY in user systemd environment; skip")
+        return None
+    return env
+
+
+def focused_greeter_window(xdotool, env, pid):
+    """Check keyboard focus, not EWMH _NET_ACTIVE_WINDOW.
+
+    The screen locker may hold a keyboard grab while KWin still reports the
+    previously active normal desktop window in _NET_ACTIVE_WINDOW.
+    """
+    focus = run([xdotool, "getwindowfocus"], env=env)
+    if not focus or focus.returncode or not focus.stdout.strip().isdigit():
+        logging.info("Cannot inspect X11 keyboard-focus window; skip")
+        return None
+    window_id = focus.stdout.strip()
+    owner = run([xdotool, "getwindowpid", window_id], env=env)
+    window_pid = owner.stdout.strip() if owner and owner.returncode == 0 else ""
+    if window_pid != str(pid):
+        logging.info("X11 focus window=%s PID=%s; KDE greeter PID=%s: skip",
+                     window_id, window_pid or "<unknown>", pid)
+        return None
+    return window_id
+
+
 def request_retry():
     if not current_x11_session():
-        logging.info("No verified locked local X11 session; skip")
         return
-    greeter = greeter_environment()
-    if not greeter:
-        logging.info("Unable to identify exactly one user greeter; skip")
+    pid = verified_greeter_pid()
+    if pid is None:
         return
-    pid, values = greeter
+    env = x11_environment()
+    if env is None:
+        return
     xdotool = shutil.which("xdotool")
     if not xdotool:
         logging.warning("xdotool unavailable")
         return
-    env = os.environ.copy()
-    env.update(values)
-    # The currently active X11 window MUST belong to the greeter process.
-    window = run([xdotool, "getactivewindow"], env=env)
-    if window is None or window.returncode or not window.stdout.strip().isdigit():
-        logging.info("Cannot identify active X11 window; no keystroke")
+    window_id = focused_greeter_window(xdotool, env, pid)
+    if window_id is None:
         return
-    window_id = window.stdout.strip()
-    active = run([xdotool, "getwindowpid", window_id], env=env)
-    if active is None or active.returncode or active.stdout.strip() != str(pid):
-        logging.info("Greeter PID=%s; active X11 window=%s pid=%s; no keystroke", pid, window_id, active.stdout.strip() if active else "?")
+    # Verify both conditions immediately again before generating input.
+    if not current_x11_session() or focused_greeter_window(xdotool, env, pid) != window_id:
+        logging.info("Locked session/focus changed while checking; skip")
         return
-    result = run([xdotool, "key", "--clearmodifiers", "--window",
-                  window_id, "Return"], env=env)
+    # XTEST sends a normal keyboard event through the existing X11 focus/grab.
+    # The physical security key must still be touched to authenticate via PAM.
+    result = run([xdotool, "key", "--clearmodifiers", "Return"], env=env)
     if result is None or result.returncode:
-        logging.warning("X11 PAM retry was not delivered")
+        logging.warning("Unable to send FIDO2 retry Enter via X11")
     else:
-        logging.info("Sent one Enter to verified greeter; FIDO2 touch still required")
+        logging.info("Sent one X11 Enter to verified focused KScreenLocker; touch still required")
 
 def main():
     if not shutil.which("xdotool"):
