@@ -771,6 +771,24 @@ enable_kde_retry(){
  echo 'SUCCESS: FIDO2 USB monitor ACTIVE (authentication auto-retry is DISABLED for safety).'
  echo 'Logs: journalctl --user -u fido2-kde-retry.service -n 50 --no-pager'
 }
+lock_trace_help(){
+ if [[ ! -f "$SELF_DIR/fido-lock-trace.py" ]]; then
+   echo 'Diagnostic script missing: update your Git checkout.'
+   return 1
+ fi
+ /usr/bin/python3 -m py_compile "$SELF_DIR/fido-lock-trace.py" || return 1
+ echo
+ echo '=== INTERMITTENT LOCK-SCREEN / MULTI-MONITOR DIAGNOSTIC ==='
+ echo 'Run this command in a NORMAL desktop terminal without sudo:'
+ printf '  python3 %q --seconds 120\n' "$SELF_DIR/fido-lock-trace.py"
+ echo
+ echo 'Then lock KDE and unlock using your key or password.'
+ echo 'The tool only observes greeter process IDs, monitor layout and session state.'
+ echo 'It writes local diagnostic files under ~/.local/state/fido2-guard/diagnostics.'
+ echo 'Press Ctrl+C after returning to your desktop to stop it early.'
+ echo 'No PAM changes, fake keyboard events, lock bypass or credential collection.'
+ echo 'You may need to redact user-journal lines before sharing.'
+}
 disable_kde_retry(){
  user_systemctl disable --now "$RETRY_UNIT_NAME" 2>/dev/null || :
  echo 'Linux insertion monitor disabled. PAM, keys and removal locking untouched.'
@@ -826,7 +844,7 @@ menu_choice(){
       read -r choice < "$selected" || choice=0
     fi
     rm -f "$selected"
-    [[ "$choice" =~ ^([1-9]|1[0-9]|20)$ ]] || choice=0
+    [[ "$choice" =~ ^([1-9]|1[0-9]|2[01])$ ]] || choice=0
     return 0
  fi
  local -a choices=(
@@ -850,6 +868,7 @@ menu_choice(){
    18 'Enable Linux FIDO2 insertion monitor (safe mode)'
    19 'Disable Linux FIDO2 insertion monitor'
    20 'Show desktop and FIDO2 compatibility report'
+   21 'Capture intermittent lock-screen / multi-monitor diagnostics'
    0 'Exit'
  )
  local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
@@ -879,6 +898,7 @@ while true; do
  14) enable_guard;; 15) disable_guard;; 16) kde_key_state_diagnostic;;
  18) enable_kde_retry;; 19) disable_kde_retry;;
  20) /usr/bin/python3 "$SELF_DIR/fido-platform.py" --user "$TARGET";;
+ 21) lock_trace_help;;
  17) if [[ -f "$SELF_DIR/fido-hotplug.py" ]]; then
         /usr/bin/python3 "$SELF_DIR/fido-hotplug.py" --watch
       else echo 'fido-hotplug.py missing; update your Git checkout.'; fi;;
