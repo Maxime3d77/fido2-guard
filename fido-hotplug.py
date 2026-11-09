@@ -41,7 +41,7 @@ def enumerate_tokens(ctx):
         try:
             device = pyudev.Devices.from_device_file(ctx, device_path)
             parent = device.find_parent("usb", "usb_device")
-            if parent:
+            if parent is not None:
                 tokens[parent.sys_path] = Token(parent.sys_path, device_path, description.strip())
         except (OSError, ValueError, pyudev.DeviceNotFoundError):
             continue
