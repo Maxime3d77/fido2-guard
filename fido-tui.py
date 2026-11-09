@@ -36,6 +36,7 @@ ACTIONS = [
     ("18", "Enable portable USB hotplug monitor (safe)", "MONITORING", "Observe FIDO USB events on systemd Linux desktops, including X11 and Wayland; no automatic unlock."),
     ("19", "Disable USB hotplug monitor", "MONITORING", "Stop the optional USB monitor; password fallback is unchanged."),
     ("20", "Desktop compatibility report", "DIAGNOSTICS", "Detect KDE 5/6, X11/Wayland, login manager and eCryptfs; explain features not yet supported."),
+    ("21", "Screen-lock / multi-monitor incident trace", "DIAGNOSTICS", "Copy the safe per-user capture command for intermittent black screens; no PAM edits or keyboard injection."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
