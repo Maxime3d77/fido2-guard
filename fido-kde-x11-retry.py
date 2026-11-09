@@ -111,42 +111,6 @@ def verified_greeter_pid():
     return candidates[0]
 
 
-def x11_environment():
-    """Use the logged-in user's X11 session environment, not protected /proc."""
-    env = os.environ.copy()
-    if not env.get("DISPLAY") or not env.get("XAUTHORITY"):
-        inherited = run(["systemctl", "--user", "show-environment"])
-        if inherited and inherited.returncode == 0:
-            for line in inherited.stdout.splitlines():
-                key, sep, value = line.partition("=")
-                if sep and key in ("DISPLAY", "XAUTHORITY") and not env.get(key):
-                    env[key] = value
-    if not env.get("DISPLAY", "").startswith(":"):
-        logging.info("No local X11 DISPLAY in user systemd environment; skip")
-        return None
-    return env
-
-
-def focused_greeter_window(xdotool, env, pid):
-    """Check keyboard focus, not EWMH _NET_ACTIVE_WINDOW.
-
-    The screen locker may hold a keyboard grab while KWin still reports the
-    previously active normal desktop window in _NET_ACTIVE_WINDOW.
-    """
-    focus = run([xdotool, "getwindowfocus"], env=env)
-    if not focus or focus.returncode or not focus.stdout.strip().isdigit():
-        logging.info("Cannot inspect X11 keyboard-focus window; skip")
-        return None
-    window_id = focus.stdout.strip()
-    owner = run([xdotool, "getwindowpid", window_id], env=env)
-    window_pid = owner.stdout.strip() if owner and owner.returncode == 0 else ""
-    if window_pid != str(pid):
-        logging.info("X11 focus window=%s PID=%s; KDE greeter PID=%s: skip",
-                     window_id, window_pid or "<unknown>", pid)
-        return None
-    return window_id
-
-
 def request_retry():
     """Log the verified locked screen; never synthesize authentication input."""
     session = current_x11_session()
