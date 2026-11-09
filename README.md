@@ -22,6 +22,8 @@ git pull --ff-only
 sudo bash fido2-guard.sh
 ```
 
+**Starting with this v2.9 revision**, option **07 — Integrated setup** also installs the KDE X11 retry watcher unit when running on an X11 desktop, but does **not** automatically enable it. You can install and enable it directly with option 18 without rerunning PAM setup. Option **10 — Service status** reports lock-on-removal and KDE insertion retry separately.
+
 Select **18 — Enable KDE X11 FIDO auto-retry (experimental)**. This option installs `fido-kde-x11-retry.py` under `/usr/local/libexec`, sets up a **user-level systemd service**, and offers to install the `xdotool` dependency. When prompted, enter **`ENABLE X11 RETRY`**. It **does not overwrite** the existing PAM profile or re-register any keys; there is no need to rerun integrated setup (7). **Option 19** stops and disables this watcher without changing PAM or the separate lock-on-removal service.
 
 **Mechanism:** when a USB FIDO2 device appears, this optional adapter checks that the local X11 session is locked according to logind, that exactly one `kscreenlocker_greet` process belongs to the current user, and that the X11 active window belongs to that greeter. Only then does it send a single Return key event to re-trigger the same PAM pathway that the user tested manually. A physical FIDO2 touch is still required before unlocking. Other windows must not receive the keystroke.
