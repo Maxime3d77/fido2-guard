@@ -76,9 +76,28 @@ Option **07 installs the monitoring daemon but leaves lock-on-removal disabled b
 
 *The current terminal interface may display some menu text in French.*
 
+## Modern terminal dashboard
+
+The manager now includes a **full-screen Textual TUI**, with a live action search field, scrollable selection list, detail panel, and status header. It runs in a **dedicated Python virtual environment** under `/opt/fido2-guard/ui-venv`, without installing Python packages into the system interpreter.
+
+On first launch, the script can offer to install Textual. On Debian, Ubuntu, or Linux Mint, if virtual environment creation is unavailable, first run:
+
+```bash
+sudo apt install -y python3-venv
+```
+
+Then launch again:
+
+```bash
+git pull --ff-only
+sudo bash fido2-guard.sh
+```
+
+When prompted, choose `o` to install the terminal UI. This requires Python 3.9+ and network access to PyPI. Textual is optional; if installation fails, the existing fallback menu remains available. The terminal UI is only an administrative interface and never modifies PAM or unlocks sessions by itself.
+
 ## Navigating the menu
 
-When `whiptail` (or `dialog`) is installed, use the **Up/Down arrow keys** to scroll through the options, **Enter** to select, and **Esc** to exit. Menu entries use simple numbers (`1`, `2`, etc.), not zero-padded codes. If no dialog utility is installed, a plain text menu remains available and accepts both `1` and `01`.
+In the Textual UI, use the **Up/Down arrow keys** to scroll through the options, **Enter** to select, and **Esc** to exit. Use `/` to focus the search input and `F5` to clear the filter. A basic dialog or plain-text fallback remains available if Textual is missing.
 
 **Updating from v2.7 to v2.8:** Running `git pull --ff-only` and launching `sudo bash fido2-guard.sh` is sufficient to use the updated menu and diagnostic option 16. **Do not rerun option 7** merely to update the menu: integrated installation re-tests PAM and related services and should only be used when setting up or repairing that integration. Existing key mappings and installed service configuration remain unchanged after a Git pull.
 
