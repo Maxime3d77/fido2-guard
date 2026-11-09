@@ -32,6 +32,8 @@ Select **18 — Enable KDE X11 FIDO auto-retry (experimental)**. This option ins
 
 **Risks and limitations:** this is a best-effort **X11 compatibility adapter**, **not a native KDE API**. The X server / KScreenLocker may reject synthetic keys or may not expose the greeter as the active window, in which case the watcher logs a skip. Sending Return may submit text the user already typed into a password field; it does not read that text. This feature is **not supported on Wayland**, not proven on KDE Plasma 6, and is not guaranteed across all Linux distributions. It must be enabled voluntarily and tested on the intended system; an external process cannot guarantee a universal, reliable lock-screen UI transition.
 
+**Updating an existing watcher:** because the user service runs the installed copy at `/usr/local/libexec/fido2-kde-x11-retry.py`, `git pull` alone does not deploy changes to the running watcher. Re-run menu **18** to reinstall its script and restart the service (`systemctl --user restart fido2-kde-retry.service`) so the updated code is used. The observer logs why any insertion is skipped, including delayed enumeration, lock-session state, and X11 active-window ownership.
+
 Diagnostics:
 
 ```bash
