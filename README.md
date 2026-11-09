@@ -76,6 +76,28 @@ Option **07 installs the monitoring daemon but leaves lock-on-removal disabled b
 
 *The current terminal interface may display some menu text in French.*
 
+## Automatic dependencies and English interface
+
+The administration dashboard and fallback menu are now in **English**. The package manager's **Install dependencies** action installs the Linux FIDO2/PAM packages and the Python prerequisites for the Textual UI. On Debian, Ubuntu and Linux Mint, this includes `python3-venv` and `python3-pip`.
+
+The first interactive launch also offers to install **Textual inside a dedicated virtual environment**, `/opt/fido2-guard/ui-venv`, using `pip` (requires internet access and Python 3.9+). Confirm with **`y`**. Textual is not installed system-wide. If the virtual environment cannot be created, the manager falls back to the basic menu. Installing prerequisites does not overwrite key registrations or PAM profiles.
+
+Dependency support varies by distribution; in particular, package availability on Arch-based systems may require manual resolution. Verify the actual versions and installed commands before proceeding.
+
+### Key insertion while KDE is already locked
+
+**Re-running Integrated setup (option 7) will not enable automatic switching from a password prompt to the FIDO2 touch prompt.** That feature is **not implemented**. The current daemon monitors USB insertion/removal for lock behavior only, and KDE's lock screen owns the active PAM conversation.
+
+If the key is inserted *after* KDE started a password-only conversation, KDE may not recognize it until authentication is restarted by the lock screen itself. Do not attempt to force `loginctl unlock-session`, inject an OTP, or kill/restart `kscreenlocker` as an automated workaround. Keep password unlock available. A native, version-aware KDE lock-screen integration is required to implement an automatic prompt transition correctly.
+
+To diagnose your current setup without changing PAM:
+
+```bash
+sudo bash fido2-guard.sh
+# Select "Connected key and KDE status" (option 16).
+# Verify the real KDE login and lock screens separately.
+```
+
 ## Modern terminal dashboard
 
 The manager now includes a **full-screen Textual TUI**, with a live action search field, scrollable selection list, detail panel, and status header. It runs in a **dedicated Python virtual environment** under `/opt/fido2-guard/ui-venv`, without installing Python packages into the system interpreter.
@@ -93,7 +115,7 @@ git pull --ff-only
 sudo bash fido2-guard.sh
 ```
 
-When prompted, choose `o` to install the terminal UI. This requires Python 3.9+ and network access to PyPI. Textual is optional; if installation fails, the existing fallback menu remains available. The terminal UI is only an administrative interface and never modifies PAM or unlocks sessions by itself.
+When prompted, choose `y` to install the terminal UI. This requires Python 3.9+ and network access to PyPI. Textual is optional; if installation fails, the existing fallback menu remains available. The terminal UI is only an administrative interface and never modifies PAM or unlocks sessions by itself.
 
 ## Navigating the menu
 
