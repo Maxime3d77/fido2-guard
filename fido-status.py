@@ -48,6 +48,8 @@ def system_unit(name, user=None):
         return {"state": "ACTIVE", "detail": "Running and enabled"}
     if a == "active":
         return {"state": "ACTIVE", "detail": f"Running (startup: {e})"}
+    if a == "failed":
+        return {"state": "ERROR", "detail": "Service failed; inspect journal"}
     if e in ("disabled", "static", "indirect") or a == "inactive":
         return {"state": "DISABLED", "detail": f"Installed; {e} / {a}"}
     if e == "masked":
@@ -88,12 +90,9 @@ def kde_pam():
 
 def dependencies():
     missing = [name for name in ("fido2-token", "pamu2fcfg", "loginctl", "pamtester") if not shutil.which(name)]
-    if cmd(["/usr/bin/python3", "-c", "import pyudev"]) is None:
+    result = cmd(["/usr/bin/python3", "-c", "import pyudev"])
+    if not result or result.returncode:
         missing.append("python3-pyudev")
-    else:
-        result = cmd(["/usr/bin/python3", "-c", "import pyudev"])
-        if not result or result.returncode:
-            missing.append("python3-pyudev")
     return {"state": "READY" if not missing else "MISSING",
             "detail": "Core tools installed" if not missing else "Missing: " + ", ".join(missing)}
 
