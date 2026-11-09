@@ -209,7 +209,7 @@ install_guard(){
  install -o root -g root -m 700 "$SELF_DIR/fido-removal-guard.py" "$GUARD"
  cat > "$UNIT" <<EOF
 [Unit]
-Description=FIDO2 Guard v2.7 - optional lock on USB FIDO removal
+Description=FIDO2 Guard v2.8 - optional lock on USB FIDO removal
 After=systemd-logind.service
 Requires=systemd-logind.service
 [Service]
