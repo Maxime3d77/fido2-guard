@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIDO2 Guard v2.9 safety update: passive KDE X11 hotplug monitor.
+"""FIDO2 Guard v2.9: portable Linux FIDO2 hotplug monitor (safe mode).
 
 KDE's password entry can treat a synthetic Return as a failed password
 attempt. This monitor deliberately NEVER sends keyboard events or unlocks
@@ -51,7 +51,8 @@ def discover():
             continue
     return devices
 
-def current_x11_session():
+def current_desktop_session():
+    """Report local session state on X11 and Wayland, without changing it."""
     sessions = run(["loginctl", "list-sessions", "--no-legend", "--no-pager"])
     if sessions is None or sessions.returncode != 0:
         logging.warning("Unable to enumerate logind sessions")
@@ -66,12 +67,12 @@ def current_x11_session():
                     "-p", "Active", "-p", "LockedHint", "-p", "Remote"])
         if info is None or info.returncode:
             continue
-        values = dict(line.split("=", 1) for line in info.stdout.splitlines() if "=" in line)
-        seen.append(f"{sid} type={values.get('Type', '?')} active={values.get('Active', '?')} locked={values.get('LockedHint', '?')} remote={values.get('Remote', '?')}")
-        if (values.get("Type") == "x11" and values.get("Active") == "yes"
-                and values.get("LockedHint") == "yes" and values.get("Remote") == "no"):
-            return sid
-    logging.info("No verified locked X11 logind session; inspected: %s", "; ".join(seen) or "none")
+        values = dict(item.split("=", 1) for item in info.stdout.splitlines() if "=" in item)
+        seen.append(f"{sid} type={values.get('Type', '?')} active={values.get('Active', '?')} locked={values.get('LockedHint', '?')}")
+        if values.get("Active") == "yes" and values.get("Remote") == "no":
+            return {"id": sid, "type": values.get("Type", "unknown"),
+                    "locked": values.get("LockedHint", "unknown")}
+    logging.info("No active local logind session for %s: %s", USER, "; ".join(seen) or "none")
     return None
 
 def verified_greeter_pid():
@@ -112,19 +113,22 @@ def verified_greeter_pid():
 
 
 def request_retry():
-    """Log the verified locked screen; never synthesize authentication input."""
-    session = current_x11_session()
+    """Safe mode: inspect session/greeter state and log only; never inject keys."""
+    session = current_desktop_session()
     if not session:
         return
-    pid = verified_greeter_pid()
-    if pid is None:
-        logging.info("FIDO2 inserted while X11 locked; greeter identity unavailable")
+    if session["locked"] != "yes":
+        logging.info("FIDO2 USB inserted; logind session=%s %s locked=%s (no auth action)",
+                     session["id"], session["type"], session["locked"])
         return
-    logging.info(
-        "FIDO2 inserted while KDE is locked (session=%s, greeter=%s). "
-        "Safe monitoring mode: no Enter sent. Initiate PAM authentication "
-        "from the lock screen, then touch the key.", session, pid
-    )
+    if session["type"] == "x11":
+        pid = verified_greeter_pid()
+        if pid is not None:
+            logging.info("FIDO2 inserted on locked X11 session=%s; KDE greeter=%s; "
+                         "manual authentication still required", session["id"], pid)
+            return
+    logging.info("FIDO2 inserted on locked %s session=%s; passive monitoring only",
+                 session["type"], session["id"])
 
 def main():
     known = discover()
@@ -133,7 +137,7 @@ def main():
     monitor = pyudev.Monitor.from_netlink(CTX)
     monitor.filter_by("usb")
     monitor.start()
-    logging.info("Watching USB insertions; existing tokens: %s; safe monitoring only (no keyboard events)", len(known))
+    logging.info("Watching USB insertions; existing tokens: %s; portable safe monitoring only", len(known))
     last = 0.0
     try:
         while True:
