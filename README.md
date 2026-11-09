@@ -161,7 +161,7 @@ The top of the full-screen terminal UI now displays a **read-only health overvie
 - **Keys** — number of credentials registered for the current user (not proof that a physical key is plugged in or working).
 - **KDE PAM** — presence of a touch-required FIDO2 rule and a recognizable password fallback (configuration check, not a live unlock test).
 - **Removal lock** — systemd status of the optional lock-on-removal service.
-- **Insertion retry** — user-systemd status of the experimental KDE X11 retry watcher.
+- **Insertion monitor** — user-systemd status of the passive KDE X11 watcher (does **not** restart PAM).
 
 Statuses are `READY`, `CONFIGURED`, `ACTIVE`, `DISABLED`, `MISSING`, or `ERROR`. **Disabled optional functions are not treated as setup errors.** The dashboard shows recommended menu actions when anything is missing. Press **F5** to refresh, or wait for its periodic refresh (15 seconds). Starting the interface does not modify PAM, register keys, or toggle services.
 
