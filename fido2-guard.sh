@@ -658,40 +658,41 @@ show_header(){
  printf '  Service : %-18s  PAM KDE : %s\n\n' "$svc" "$pam"
 }
 menu_choice(){
- if command -v whiptail >/dev/null && [[ -t 0 && -t 1 ]]; then
-   whiptail --title 'FIDO2 GUARD v2.8 • MENU PRINCIPAL' --backtitle "$OS_ID / $TARGET / $(count) clés" \
-     --menu 'Sélectionner une opération :' 25 88 16 \
-     1 'Dépendances / apt / dnf / pacman' \
-     2 'Ajouter une clé FIDO2' \
-     3 'Lister les clés enregistrées' \
-     4 'Révoquer une clé (confirmation)' \
-     5 'Importer des clés existantes' \
-     6 'Tester PAM avec toucher' \
-     7 'INSTALLATION INTÉGRÉE (FIDO2 + PAM ; retrait désactivé)' \
-     8 'Assistance PAM : utiliser le parcours 07' \
-     9 'Restaurer PAM KDE' \
-     10 'Statut du service / journaux' \
-     11 'Supprimer seulement le service' \
-     12 'Purge totale (double confirmation)' \
-     13 'Diagnostic PAM KDE' \
-     14 'ACTIVER le verrouillage automatique au retrait' \
-     15 'DÉSACTIVER le verrouillage au retrait (garder FIDO2)' \
-     16 'Diagnostic KDE : état de la clé et du profil PAM' \
-     0 'Quitter' 3>&1 1>&2 2>&3 || echo 0
+ local -a choices=(
+   1 'Installer les dépendances'
+   2 'Ajouter une clé FIDO2'
+   3 'Lister les clés enregistrées'
+   4 'Révoquer une clé'
+   5 'Importer des clés existantes'
+   6 'Préparer un test PAM avec toucher'
+   7 'Installation intégrée (première installation / réparation)'
+   8 'Aide configuration PAM'
+   9 'Restaurer PAM KDE'
+   10 'Statut du service et journaux'
+   11 'Supprimer uniquement le service'
+   12 'Purge totale (double confirmation)'
+   13 'Diagnostic PAM KDE'
+   14 'Activer le verrouillage au retrait'
+   15 'Désactiver le verrouillage au retrait'
+   16 'Diagnostic FIDO2 connecté / KDE'
+   0 'Quitter'
+ )
+ local prompt='Utilise les flèches Haut/Bas pour défiler, puis Entrée pour choisir. Échap pour quitter.'
+ if [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1; then
+   whiptail --title 'FIDO2 GUARD v2.8' --backtitle "$OS_ID / $TARGET / $(count) clés" \
+     --default-item 10 --menu "$prompt" 21 84 11 "${choices[@]}" 3>&1 1>&2 2>&3 || echo 0
+ elif [[ -t 0 && -t 1 ]] && command -v dialog >/dev/null 2>&1; then
+   dialog --stdout --title 'FIDO2 GUARD v2.8' --default-item 10 \
+     --menu "$prompt" 21 84 11 "${choices[@]}" || echo 0
  else
-   cat >&2 <<'EOF'
-  [01] Dépendances                  [08] Aide PAM KDE
-  [02] Ajouter une clé             [09] Restaurer PAM KDE
-  [03] Lister les clés            [10] Statut et journaux
-  [04] Révoquer une clé           [11] Supprimer le service
-  [05] Importer clés anciennes    [12] PURGE complète
-  [06] Test FIDO2 avec toucher    [13] Diagnostic PAM KDE
-  [07] INSTALLATION INTÉGRÉE        [14] Activer verrouillage au retrait
-  [15] Désactiver verrouillage au retrait  [16] Diagnostic état clé KDE
-  [00] Quitter
-EOF
-   read -r -p 'Choix : ' choice </dev/tty || choice=0
-   echo "$choice"
+   printf '\n=== FIDO2 GUARD : MENU ===\n' >&2
+   local i choice
+   for ((i=0; i<${#choices[@]}; i+=2)); do
+     printf ' %2s  %s\n' "${choices[i]}" "${choices[i+1]}" >&2
+   done
+   read -r -p 'Choix (1 à 16, 0 pour quitter) : ' choice </dev/tty || choice=0
+   [[ "$choice" =~ ^0*[0-9]+$ ]] || { echo invalid; return; }
+   printf '%d\n' "$((10#$choice))"
  fi
 }
 while true; do
