@@ -14,22 +14,22 @@ from textual.widgets import Footer, Header, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 ACTIONS = [
-    ("1", "Installer les dépendances", "ENVIRONNEMENT", "Installe les utilitaires nécessaires (apt / dnf / pacman)."),
-    ("2", "Ajouter une clé FIDO2", "CLÉS DE SÉCURITÉ", "Enregistre une clé supplémentaire sans effacer les autres."),
-    ("3", "Afficher les clés enregistrées", "CLÉS DE SÉCURITÉ", "Liste les identifiants de clés et leurs étiquettes."),
-    ("4", "Révoquer une clé", "CLÉS DE SÉCURITÉ", "Retire une autorisation après confirmation."),
-    ("5", "Importer mes anciennes clés", "CLÉS DE SÉCURITÉ", "Importe un fichier U2F existant si la base est vide."),
-    ("6", "Préparer le test PAM FIDO2", "AUTHENTIFICATION", "Crée un profil PAM de test isolé."),
-    ("7", "Installation intégrée / réparation", "AUTHENTIFICATION", "Installe ou répare PAM et le service ; à éviter pour une simple mise à jour du menu."),
-    ("8", "Aide à la configuration PAM", "AUTHENTIFICATION", "Explique le parcours d'installation sécurisée."),
-    ("9", "Restaurer PAM KDE", "AUTHENTIFICATION", "Restaure le profil PAM modifié par le gestionnaire."),
-    ("10", "Statut du système et journaux", "SURVEILLANCE", "Affiche l'état du service et les journaux récents."),
-    ("11", "Supprimer le service de retrait", "SURVEILLANCE", "Désinstalle uniquement le démon de retrait USB."),
-    ("12", "Purge complète", "MAINTENANCE", "Supprime les paramètres du gestionnaire avec sauvegarde et confirmations."),
-    ("13", "Diagnostic PAM KDE", "DIAGNOSTIC", "Analyse les profils PAM et la configuration de KDE."),
-    ("14", "Activer le verrouillage au retrait", "SURVEILLANCE", "Verrouille la session si un périphérique FIDO2 USB connu est retiré."),
-    ("15", "Désactiver le verrouillage au retrait", "SURVEILLANCE", "Conserve PAM et les clés, arrête uniquement le démon."),
-    ("16", "Détection de la clé et état KDE", "DIAGNOSTIC", "Vérifie la présence USB et la règle FIDO2 sans déverrouiller KDE."),
+    ("1", "Install dependencies", "ENVIRONMENT", "Install required FIDO2/PAM packages (apt, dnf or pacman)."),
+    ("2", "Add a FIDO2 security key", "SECURITY KEYS", "Register another key without removing existing keys."),
+    ("3", "List registered security keys", "SECURITY KEYS", "Display registered security keys and labels."),
+    ("4", "Revoke a security key", "SECURITY KEYS", "Revoke a credential with confirmation."),
+    ("5", "Import existing security keys", "SECURITY KEYS", "Import existing U2F mappings if the current file is empty."),
+    ("6", "Prepare a FIDO2 PAM test", "AUTHENTICATION", "Create an isolated PAM test profile."),
+    ("7", "Integrated setup / repair", "AUTHENTICATION", "Install or repair PAM and the monitor; not needed for menu updates."),
+    ("8", "PAM configuration help", "AUTHENTICATION", "Explain the secure installation workflow."),
+    ("9", "Restore KDE PAM configuration", "AUTHENTICATION", "Restore the PAM profile modified by this manager."),
+    ("10", "Service status and logs", "MONITORING", "Show service status and recent logs."),
+    ("11", "Remove the removal-monitor service", "MONITORING", "Remove the USB removal monitor without changing PAM or keys."),
+    ("12", "Full removal", "MAINTENANCE", "Remove manager settings with backups and confirmation."),
+    ("13", "KDE PAM diagnostics", "DIAGNOSTICS", "Inspect PAM profiles and KDE configuration."),
+    ("14", "Enable lock on key removal", "MONITORING", "Lock the session when a recognized USB FIDO2 device is removed."),
+    ("15", "Disable lock on key removal", "MONITORING", "Keep PAM and keys; stop the monitoring daemon."),
+    ("16", "Connected key and KDE status", "DIAGNOSTICS", "Check USB detection and PAM U2F rule without unlocking."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
@@ -58,10 +58,10 @@ class GuardUI(App):
     """
 
     BINDINGS = [
-        Binding("escape", "quit", "Quitter"),
-        Binding("ctrl+q", "quit", "Quitter", show=False),
-        Binding("slash", "focus_search", "Rechercher"),
-        Binding("f5", "clear_search", "Effacer filtre"),
+        Binding("escape", "quit", "Quit"),
+        Binding("ctrl+q", "quit", "Quit", show=False),
+        Binding("slash", "focus_search", "Search"),
+        Binding("f5", "clear_search", "Clear filter"),
     ]
 
     def __init__(self, output: Path, user: str, distro: str, keys: str, service: str):
@@ -75,21 +75,21 @@ class GuardUI(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Vertical(id="hero"):
-            yield Static("◆  FIDO2 GUARD   /   ADMINISTRATION", id="hero_title")
+            yield Static("◆  FIDO2 GUARD   /   CONTROL CENTER", id="hero_title")
             yield Static(
-                f"Compte  {self.user}    ·    Distribution  {self.distro}    ·    Clés  {self.keys}    ·    Retrait  {self.service}",
+                f"User  {self.user}    ·    Distro  {self.distro}    ·    Keys  {self.keys}    ·    Removal monitor  {self.service}",
                 id="hero_status",
             )
         with Horizontal(id="workspace"):
             with Vertical(id="left"):
-                yield Input(placeholder="Filtrer les actions…  (touche /)", id="search")
+                yield Input(placeholder="Search actions…  (press /)", id="search")
                 yield OptionList(*[Option(f"{int(n):>2}    {label}", id=n) for n, label, _, _ in ACTIONS], id="items")
             with Vertical(id="right"):
-                yield Static("CHOISISSEZ UNE ACTION", id="detail_title")
+                yield Static("SELECT AN ACTION", id="detail_title")
                 yield Static("NAVIGATION", id="detail_group")
-                yield Static("↑ ↓  Déplacer la sélection\nEntrée  Exécuter\n/  Rechercher\nÉchap  Quitter", id="detail_text")
-                yield Static("La présence USB ne déverrouille jamais la session sans authentification PAM.", id="notice")
-        yield Static("↑↓ Navigation   •   Enter Sélection   •   / Recherche   •   Esc Quitter", id="help")
+                yield Static("↑ ↓  Move selection\nEnter  Run selected action\n/  Search\nEsc  Quit", id="detail_text")
+                yield Static("USB presence never unlocks a session without PAM authentication.", id="notice")
+        yield Static("↑↓ Navigate   •   Enter Select   •   / Search   •   Esc Quit", id="help")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -127,9 +127,9 @@ class GuardUI(App):
             options.highlighted = 0
             self.update_detail()
         else:
-            self.query_one("#detail_title", Static).update("Aucun résultat")
-            self.query_one("#detail_group", Static).update("RECHERCHE")
-            self.query_one("#detail_text", Static).update("Modifie les termes recherchés.")
+            self.query_one("#detail_title", Static).update("No matching actions")
+            self.query_one("#detail_group", Static).update("SEARCH")
+            self.query_one("#detail_text", Static).update("Try another search term.")
 
     def action_focus_search(self) -> None:
         self.query_one("#search", Input).focus()
