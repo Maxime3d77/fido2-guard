@@ -89,7 +89,7 @@ class GuardUI(App):
         with Vertical(id="hero"):
             yield Static("◆  FIDO2 GUARD   /   CONTROL CENTER", id="hero_title")
             yield Static(
-                f"User  {self.user}    ·    Distro  {self.distro}    ·    Keys  {self.keys}    ·    Removal monitor  {self.service}",
+                f"User: {self.user}   •   Linux: {self.distro}   •   Registered keys: {self.keys}",
                 id="hero_status",
             )
             yield Static("Checking FIDO2 Guard components…", id="health")
@@ -136,16 +136,16 @@ class GuardUI(App):
                 "yellow" if state in ("DISABLED", "MISSING") else "red")
             return f"{label} [{tone}]{state}[/]"
         lines = [
-            f"Health: {data.get('overall', 'UNKNOWN')}     " + indicator("dependencies", "Dependencies:"),
-            indicator("keys", "Security keys:") + "    " + indicator("pam", "KDE PAM:"),
-            indicator("removal", "Lock on removal:") + "    " + indicator("retry", "KDE insertion retry:"),
+            f"SYSTEM {data.get('overall', 'UNKNOWN')}  •  " + indicator("dependencies", "Packages"),
+            indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE PAM"),
+            indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion retry"),
         ]
         self.query_one("#health", Static).update("\n".join(lines))
         advice = data.get("advice", [])
         if advice:
-            self.query_one("#remediation", Static).update("Next: " + str(advice[0]) + ("  •  More details: option 10" if len(advice) > 1 else ""))
+            self.query_one("#remediation", Static).update("\n".join("Next: " + str(x) for x in advice[:2]))
         else:
-            self.query_one("#remediation", Static).update("Core components configured. Test authentication on the real lock screen.")
+            self.query_one("#remediation", Static).update("Components configured; verify both unlock methods on the KDE lock screen.")
 
     def update_detail(self) -> None:
         selected = self.query_one("#items", OptionList)
