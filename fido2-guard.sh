@@ -779,8 +779,13 @@ enable_kde_retry(){
     echo 'ERROR: Watcher installation failed. Existing keys and PAM were not modified.'
     return 1
  fi
- if ! user_systemctl enable --now "$RETRY_UNIT_NAME"; then
+ if ! user_systemctl enable "$RETRY_UNIT_NAME"; then
     echo 'ERROR: Could not enable the user watcher. Check user systemd session.'
+    return 1
+ fi
+ # enable --now does not restart a previously running service after script updates.
+ if ! user_systemctl restart "$RETRY_UNIT_NAME"; then
+    echo 'ERROR: Could not start/restart the updated user watcher.'
     return 1
  fi
  if ! user_systemctl is-active "$RETRY_UNIT_NAME"; then
