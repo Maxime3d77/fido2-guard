@@ -1,36 +1,36 @@
 # FIDO2 Guard — v2.7
 
-Gestionnaire Linux de clés **FIDO2/U2F** avec authentification PAM pour KDE Plasma et verrouillage **facultatif** lors du retrait physique d'une clé USB FIDO2.
+A Linux **FIDO2/U2F security key manager** with PAM authentication for KDE Plasma and **optional automatic screen locking when a USB FIDO2 key is removed**.
 
-> **Version pilote, non auditée.** Des anomalies intermittentes de KScreenLocker (écran noir ou comportement inattendu) ont été observées sur Linux Mint KDE. Tester sur une machine non critique et conserver un mot de passe et une console de secours. Ne pas déployer directement en production.
+> **Experimental, not security-audited.** Intermittent KScreenLocker issues (black screens and unexpected behavior) have been observed during testing on Linux Mint KDE. Test on a non-critical computer, keep a working password and an administrator recovery console available, and do not deploy directly to production.
 
-## Fonctionnalités
+## Features
 
-- Gestion de plusieurs clés Thetis, YubiKey ou autres authentificateurs FIDO2.
-- Ajout, liste, import, révocation avec confirmation et sauvegardes.
-- Authentification `pam_u2f` avec **toucher requis** (`userpresence=1`).
-- Conservation du **mot de passe Linux** comme solution de secours.
-- Verrouillage au retrait USB activable et désactivable dans le menu (**14 / 15**).
-- **Jamais de déverrouillage automatique** : le démon ne lance pas `loginctl unlock-session`.
-- Diagnostic PAM KDE, journaux, restauration PAM et purge complète avec confirmations.
-- Détection des distributions classiques utilisant **apt**, **dnf** et **pacman**.
+- Manage multiple Thetis, YubiKey, and other FIDO2 authenticators.
+- Register, list, import, and revoke security keys, with confirmations and backups.
+- Authenticate through `pam_u2f` with **physical touch required** (`userpresence=1`).
+- Keep your **Linux account password** as a fallback.
+- Enable or disable **automatic locking on USB key removal** from the menu (**options 14 / 15**).
+- **Never unlock automatically**: the monitoring daemon does **not** call `loginctl unlock-session`.
+- KDE PAM diagnostics, service logs, PAM rollback, and confirmed full removal.
+- Detect mainstream distribution families using **apt**, **dnf**, or **pacman**.
 
-## Installer la dernière version
+## Get the latest version
 
-Installer Git si nécessaire :
+Install Git if it is not already available:
 
 ```bash
 # Debian / Ubuntu / Linux Mint
 sudo apt update && sudo apt install -y git
 
-# Fedora
+# Fedora (run instead on Fedora)
 # sudo dnf install -y git
 
-# Arch / Manjaro
+# Arch / Manjaro (run instead on Arch-based systems)
 # sudo pacman -S --needed git
 ```
 
-Cloner le dépôt et lancer le menu :
+Clone the repository and launch the manager:
 
 ```bash
 git clone https://github.com/Maxime3d77/fido2-guard.git
@@ -38,82 +38,91 @@ cd fido2-guard
 sudo bash fido2-guard.sh
 ```
 
-Le script nécessite **systemd**, un terminal et des droits administrateur. Sur les distributions compatibles, choisir **01 — Dépendances** pour installer les outils `pam-u2f`, `pamu2fcfg`, `fido2-tools`, `pyudev`, etc.
+The tool requires **systemd**, a terminal, and administrator privileges. On supported distributions, select **01 — Dependencies** to install the relevant packages, including `pam-u2f`, `pamu2fcfg`, `fido2-tools`, and `pyudev`.
 
-## Installation / mise en route
+## Setup
 
-1. **02 — Ajouter une clé** ; débrancher les autres authentificateurs et toucher la clé demandée.
-2. **03 — Lister les clés** pour vérifier l'enregistrement.
-3. **07 — Installation intégrée** : vérifie FIDO2 avec toucher, PAM KDE, puis la méthode de secours.
-4. Tester réellement le déverrouillage KDE par **toucher** et **mot de passe**.
-5. **14 — Activer le verrouillage au retrait** uniquement après les tests.
+1. Select **02 — Add a key**. Unplug other authenticators and touch the key when prompted.
+2. Select **03 — List keys** to confirm registration.
+3. Select **07 — Integrated installation**. This checks FIDO2 touch authentication, KDE PAM, and the fallback password path.
+4. **Test the actual KDE unlock screen** using both a key touch and your regular password.
+5. Only once both methods work, select **14 — Enable lock on removal**, if desired.
 
-L'option **07 installe le démon mais laisse la surveillance du retrait désactivée par défaut** ; ce choix évite de verrouiller automatiquement une session dont le déverrouillage n'a pas encore été éprouvé. L'option **15** désactive la surveillance sans toucher aux clés ou à PAM.
+Option **07 installs the monitoring daemon but leaves lock-on-removal disabled by default**. This avoids automatically locking a session before its unlock methods have been validated. Option **15** disables removal monitoring without removing the keys or changing PAM.
 
-### Principales options du menu
+### Menu reference
 
 | Option | Action |
 | --- | --- |
-| 01 | Dépendances |
-| 02 / 03 / 04 | Ajouter, lister et révoquer les clés |
-| 05 | Importer des clés existantes |
-| 06 | Préparer un test PAM FIDO2 |
-| 07 | Installation intégrée |
-| 09 | Restaurer PAM KDE |
-| 10 / 13 | Journaux / diagnostic |
-| 11 | Supprimer le service uniquement |
-| 12 | Purge complète avec confirmation et sauvegarde |
-| 14 / 15 | Activer / désactiver le verrouillage au retrait |
+| 01 | Install dependencies |
+| 02 / 03 / 04 | Add, list, and revoke keys |
+| 05 | Import existing keys |
+| 06 | Prepare a FIDO2 PAM touch test |
+| 07 | Integrated setup |
+| 09 | Restore previous KDE PAM configuration |
+| 10 / 13 | Service logs / PAM diagnostics |
+| 11 | Remove the monitoring service only |
+| 12 | Full removal with explicit confirmation and backup |
+| 14 / 15 | Enable / disable lock on removal |
 
-## Mettre à jour depuis Git
+*The current terminal interface may display some menu text in French.*
 
-Dans le dossier du clone :
+## Update from Git
+
+From the cloned repository directory:
 
 ```bash
 git pull --ff-only
 sudo bash fido2-guard.sh
 ```
 
-Depuis une ancienne v1.x ou v2.x, **ne pas purger d'abord** : les autorisations sont conservées dans `/etc/thetis-auth/u2f_keys`. Durant les tests, désactiver le service précédent :
+When upgrading from an earlier v1.x or v2.x build, **do not purge first**: existing key mappings in `/etc/thetis-auth/u2f_keys` can be reused. Disable the previous monitoring service while testing:
 
 ```bash
 sudo systemctl disable --now thetis-guard.service
 ```
 
-Utiliser ensuite l'option 07 pour mettre à jour le composant, et l'option 14 pour activer volontairement le retrait.
+Then use option **07** to update the installed component, followed by option **14** if you want to explicitly enable lock-on-removal.
 
-## Gestion du service et diagnostic
+## Service management and troubleshooting
 
 ```bash
+# Inspect the service
 sudo systemctl status thetis-guard.service
+
+# View recent service logs
 sudo journalctl -u thetis-guard.service -n 80 --no-pager
+
+# Disable lock-on-removal immediately
 sudo systemctl disable --now thetis-guard.service
 ```
 
-L'arrêt du service n'enlève ni les autorisations ni PAM KDE. Si le verrouillage KDE pose problème, utiliser l'option **09** pour revenir à l'ancienne configuration PAM. Ne pas supprimer `/etc/pam.d/kde` manuellement.
+Stopping the daemon does **not** remove registered keys or KDE PAM authentication. If KDE unlock stops working as expected, use **option 09** to restore the prior PAM configuration. Do **not** manually delete `/etc/pam.d/kde`.
 
-Journaux KScreenLocker :
+To inspect KScreenLocker-related logs:
 
 ```bash
 journalctl --user -b --no-pager | grep -Ei 'kscreenlocker|kwin|plasmashell|sddm' | tail -80
 sudo journalctl -b --no-pager | grep -Ei 'pam_u2f|pam_unix\(kde:auth\)|kscreenlocker' | tail -80
 ```
 
-Si une YubiKey écrit un long code dans le champ mot de passe, il s'agit de son interface **OTP clavier**, pas d'une authentification FIDO2.
+If touching a YubiKey types a long string into the password field, that is the keyboard-emulating **OTP interface**, **not** successful FIDO2 authentication.
 
-## Compatibilité et limites
+## Compatibility and security limitations
 
-Le script détecte les distributions `apt`, `dnf` et `pacman`, mais l'intégration PAM **n'est pas garantie pour tous les environnements**. Le service PAM utilisé par KDE dépend de sa compilation et de la distribution. Les distributions immuables, GNOME et les environnements SELinux enforcing demandent une validation séparée. Sur Arch, `pamtester` peut ne pas être installé par `pacman` sans dépôt tiers.
+The installer recognizes `apt`, `dnf`, and `pacman` distributions, but **PAM integration is not guaranteed across all Linux configurations**. KDE's actual PAM service name can depend on how it was built and packaged. Immutable distributions, GNOME, and SELinux-enforcing environments require separate evaluation. On Arch-based systems, `pamtester` might not be available through the default `pacman` repositories.
 
-Le retrait USB détecte des **périphériques FIDO**, pas exclusivement les clés enregistrées : une clé inconnue peut aussi provoquer un verrouillage, et le retrait d'une clé peut verrouiller alors qu'une autre est encore connectée. Les authentificateurs NFC ne sont pas surveillés. Le démon ne prouve **pas** la possession de la clé ; l'authentification cryptographique intervient dans PAM au déverrouillage. Ceci n'est pas une solution de sécurité auditée et ne remplace pas le chiffrement du disque.
+USB removal detection monitors **recognized FIDO devices**, not exclusively individually registered keys. Therefore an unregistered device may trigger locking, and removing one key may lock the session even when another key remains connected. NFC authenticators are not monitored. The monitoring service itself **does not cryptographically authenticate the key**: that happens through PAM when unlocking.
 
-## Structure
+This project has **not undergone a security audit** and is not a replacement for full-disk encryption or endpoint protection.
+
+## Repository layout
 
 ```text
 fido2-guard/
 ├── README.md
-├── fido2-guard.sh           # gestionnaire terminal / installation
-└── fido-removal-guard.py    # service de verrouillage USB uniquement
+├── fido2-guard.sh           # Terminal administration and setup menu
+└── fido-removal-guard.py    # USB removal monitor; locks only
 ```
 
-**Version : 2.7.** Aucune licence de réutilisation n'est explicitement accordée tant qu'un fichier LICENSE n'est pas ajouté.
+**Version:** 2.7. **License:** No redistribution license has been explicitly granted until a LICENSE file is added.
