@@ -657,7 +657,46 @@ show_header(){
  printf '  Compte  : %-18s  Clés    : %-10s\n' "$TARGET" "$(count)"
  printf '  Service : %-18s  PAM KDE : %s\n\n' "$svc" "$pam"
 }
+UI_VENV=/opt/fido2-guard/ui-venv
+TEXTUAL_UI="$SELF_DIR/fido-tui.py"
+ensure_textual_ui(){
+  [[ -f "$TEXTUAL_UI" ]] || return 1
+  if [[ -x "$UI_VENV/bin/python" ]] && "$UI_VENV/bin/python" -c 'import textual' >/dev/null 2>&1; then return 0; fi
+  [[ -t 0 && -t 1 ]] || return 1
+  [[ "${FIDO2_NO_UI_INSTALL:-0}" == 1 ]] && return 1
+  echo
+  echo 'Interface Textual moderne non installée (Python 3.9+ requis).'
+  read -r -p 'Installer automatiquement Textual dans un venv isolé ? [o/N] ' answer </dev/tty || return 1
+  [[ "$answer" == [oOyY] ]] || return 1
+  command -v python3 >/dev/null || return 1
+  mkdir -p /opt/fido2-guard
+  if ! python3 -m venv "$UI_VENV"; then
+     echo 'python3-venv est requis : sudo apt install python3-venv (Debian/Mint).'
+     return 1
+  fi
+  if ! "$UI_VENV/bin/python" -m pip install --disable-pip-version-check 'textual>=0.70,<10'; then
+     echo 'Échec de l’installation Textual. Menu de secours disponible.'
+     return 1
+  fi
+  "$UI_VENV/bin/python" -c 'import textual'
+}
 menu_choice(){
+ choice=0
+ if [[ -t 0 && -t 1 ]] && ensure_textual_ui; then
+    local selected state
+    selected=$(mktemp /tmp/fido2-choice.XXXXXXXX)
+    chmod 600 "$selected"
+    state=DÉSACTIVÉ
+    systemctl -q is-active thetis-guard.service && state=ACTIF
+    "$UI_VENV/bin/python" "$TEXTUAL_UI" "$selected" "$TARGET" "$OS_ID" "$(count)" "$state" \
+       </dev/tty >/dev/tty 2>/dev/tty || :
+    if [[ -s "$selected" ]]; then
+      read -r choice < "$selected" || choice=0
+    fi
+    rm -f "$selected"
+    [[ "$choice" =~ ^([1-9]|1[0-6])$ ]] || choice=0
+    return 0
+ fi
  local -a choices=(
    1 'Installer les dépendances'
    2 'Ajouter une clé FIDO2'
@@ -665,7 +704,7 @@ menu_choice(){
    4 'Révoquer une clé'
    5 'Importer des clés existantes'
    6 'Préparer un test PAM avec toucher'
-   7 'Installation intégrée (première installation / réparation)'
+   7 'Installation intégrée (installation initiale / réparation)'
    8 'Aide configuration PAM'
    9 'Restaurer PAM KDE'
    10 'Statut du service et journaux'
@@ -677,27 +716,25 @@ menu_choice(){
    16 'Diagnostic FIDO2 connecté / KDE'
    0 'Quitter'
  )
- local prompt='Utilise les flèches Haut/Bas pour défiler, puis Entrée pour choisir. Échap pour quitter.'
+ local prompt='Flèches Haut/Bas pour défiler ; Entrée pour choisir ; Échap pour quitter.'
  if [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1; then
-   whiptail --title 'FIDO2 GUARD v2.8' --backtitle "$OS_ID / $TARGET / $(count) clés" \
-     --default-item 10 --menu "$prompt" 21 84 11 "${choices[@]}" 3>&1 1>&2 2>&3 || echo 0
+    choice=$(whiptail --title 'FIDO2 GUARD' --default-item 10 --menu "$prompt" 21 84 11 "${choices[@]}" 3>&1 1>&2 2>&3) || choice=0
  elif [[ -t 0 && -t 1 ]] && command -v dialog >/dev/null 2>&1; then
-   dialog --stdout --title 'FIDO2 GUARD v2.8' --default-item 10 \
-     --menu "$prompt" 21 84 11 "${choices[@]}" || echo 0
+    choice=$(dialog --stdout --title 'FIDO2 GUARD' --default-item 10 --menu "$prompt" 21 84 11 "${choices[@]}") || choice=0
  else
-   printf '\n=== FIDO2 GUARD : MENU ===\n' >&2
-   local i choice
-   for ((i=0; i<${#choices[@]}; i+=2)); do
-     printf ' %2s  %s\n' "${choices[i]}" "${choices[i+1]}" >&2
-   done
-   read -r -p 'Choix (1 à 16, 0 pour quitter) : ' choice </dev/tty || choice=0
-   [[ "$choice" =~ ^0*[0-9]+$ ]] || { echo invalid; return; }
-   printf '%d\n' "$((10#$choice))"
+    printf '\n=== FIDO2 GUARD : MENU ===\n' >&2
+    local i
+    for ((i=0; i<${#choices[@]}; i+=2)); do
+       printf ' %2s  %s\n' "${choices[i]}" "${choices[i+1]}" >&2
+    done
+    read -r -p 'Choix : ' choice </dev/tty || choice=0
+    [[ "$choice" =~ ^0*[0-9]+$ ]] || { choice=invalid; return 0; }
+    choice=$((10#$choice))
  fi
 }
 while true; do
  show_header
- choice=$(menu_choice)
+ menu_choice
  [[ "$choice" == 0 ]] && break
  if ! case "$choice" in
  1) install_deps;; 2) add_key;; 3) list_keys;; 4) revoke_key;; 5) import_old;;
