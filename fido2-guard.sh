@@ -372,13 +372,24 @@ rollback_kde_pam(){
 }
 status(){
  echo "OS: $OS_ID ($PKG) | utilisateur: $TARGET"
- echo "Clés: $(count)"
+ echo "Keys: $(count)"
+ echo "LOCK ON REMOVAL (system service):"
  systemctl --no-pager --full is-enabled thetis-guard.service 2>/dev/null || :
  systemctl --no-pager --full is-active thetis-guard.service 2>/dev/null || :
  local pam_target=/etc/pam.d/kde
  [[ -s "$PAM_TARGET_META" ]] && pam_target=/etc/pam.d/$(cat "$PAM_TARGET_META")
  [[ -f "$pam_target" ]] && grep -Fq "$MARK" "$pam_target" && echo "PAM KDE v2: actif ($pam_target)" || echo 'PAM KDE v2: non confirmé / inactif'
  journalctl -u thetis-guard.service -n 12 --no-pager 2>/dev/null || :
+ echo
+ echo 'KDE X11 RETRY ON INSERTION (user service):'
+ local retry_unit_path="$USER_HOME/.config/systemd/user/fido2-kde-retry.service"
+ if [[ -f "$retry_unit_path" ]]; then
+   echo 'Unit: INSTALLED'
+   echo -n 'Enabled: '; user_systemctl is-enabled "$RETRY_UNIT_NAME" 2>/dev/null || :
+   echo -n 'Active:  '; user_systemctl is-active "$RETRY_UNIT_NAME" 2>/dev/null || :
+ else
+   echo 'Unit: NOT INSTALLED (menu 18 installs and enables)'
+ fi
 }
 complete_purge(){
  echo
@@ -615,10 +626,21 @@ guided_install(){
    return 1
  fi
  echo
- echo 'INSTALLATION FIDO2/PAM TERMINÉE.'
- echo 'Teste d’abord le déverrouillage réel dans KDE par toucher ou mot de passe.'
- echo 'Si tu veux ensuite le verrouillage au retrait, utilise le MENU 14.'
- echo 'Le menu 15 le désactive sans modifier PAM ni tes clés.'
+ echo 'Installing the optional KDE X11 retry watcher (DISABLED by default)...'
+ if [[ "${XDG_SESSION_TYPE:-}" == x11 ]]; then
+   if install_kde_retry; then
+      echo 'KDE X11 watcher installed. Menu 18 enables it; menu 19 disables it.'
+   else
+      echo 'Warning: KDE X11 watcher installation failed. PAM and key mappings are unchanged.'
+   fi
+ else
+   echo 'KDE X11 watcher skipped: non-X11 or unknown session. Use menu 18 from an X11 session.'
+ fi
+ echo
+ echo 'INTEGRATED INSTALLATION FINISHED.'
+ echo 'Test physical FIDO2 touch and the Linux password on the actual KDE lock screen.'
+ echo '14 / 15: enable / disable locking when a USB key is removed.'
+ echo '18 / 19: enable / disable FIDO2 authentication retry when a key is inserted (KDE X11 only).'
 }
 
 kde_key_state_diagnostic(){
