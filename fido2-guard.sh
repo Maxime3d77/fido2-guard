@@ -381,7 +381,7 @@ status(){
  [[ -f "$pam_target" ]] && grep -Fq "$MARK" "$pam_target" && echo "PAM KDE v2: actif ($pam_target)" || echo 'PAM KDE v2: non confirmé / inactif'
  journalctl -u thetis-guard.service -n 12 --no-pager 2>/dev/null || :
  echo
- echo 'KDE X11 RETRY ON INSERTION (user service):'
+ echo 'KDE X11 HOTPLUG MONITOR (no automatic Enter):'
  local retry_unit_path="$USER_HOME/.config/systemd/user/fido2-kde-retry.service"
  if [[ -f "$retry_unit_path" ]]; then
    echo 'Unit: INSTALLED'
@@ -629,7 +629,7 @@ guided_install(){
  echo 'Installing the optional KDE X11 retry watcher (DISABLED by default)...'
  if [[ "${XDG_SESSION_TYPE:-}" == x11 ]]; then
    if install_kde_retry; then
-      echo 'KDE X11 watcher installed. Menu 18 enables it; menu 19 disables it.'
+      echo 'KDE X11 passive insertion monitor installed. Menu 18 enables it; menu 19 disables it.'
    else
       echo 'Warning: KDE X11 watcher installation failed. PAM and key mappings are unchanged.'
    fi
@@ -640,7 +640,7 @@ guided_install(){
  echo 'INTEGRATED INSTALLATION FINISHED.'
  echo 'Test physical FIDO2 touch and the Linux password on the actual KDE lock screen.'
  echo '14 / 15: enable / disable locking when a USB key is removed.'
- echo '18 / 19: enable / disable FIDO2 authentication retry when a key is inserted (KDE X11 only).'
+ echo '18 / 19: enable / disable passive FIDO2 insertion monitor (KDE X11 only).'
 }
 
 kde_key_state_diagnostic(){
@@ -721,15 +721,6 @@ install_kde_retry(){
    echo 'Launch the manager with sudo from the logged-in KDE X11 desktop.'
    return 1
  fi
- command -v xdotool >/dev/null || {
-   echo 'Installing xdotool dependency (KDE X11 only)...'
-   case "$PKG" in
-     apt) apt-get install -y xdotool || return 1 ;;
-     dnf) dnf install -y xdotool || return 1 ;;
-     pacman) pacman -S --needed xdotool || return 1 ;;
-     *) echo 'Install xdotool manually and retry.'; return 1 ;;
-   esac
- }
  /usr/bin/python3 -c 'import pyudev' || { echo 'python3-pyudev missing. Install dependencies (menu 1).'; return 1; }
  /usr/bin/python3 -m py_compile "$RETRY_SRC" || return 1
  install -d -o root -g root -m 755 /usr/local/libexec
@@ -744,7 +735,7 @@ install_kde_retry(){
  fi
  cat > "$unit_file" <<EOF
 [Unit]
-Description=FIDO2 Guard v2.9 - KDE X11 insertion retry (opt-in)
+Description=FIDO2 Guard v2.9 - KDE X11 insertion monitor (safe mode)
 After=graphical-session.target
 PartOf=graphical-session.target
 [Service]
@@ -759,48 +750,44 @@ EOF
  chown "$TARGET:$(id -gn "$TARGET")" "$unit_file"
  chmod 644 "$unit_file"
  user_systemctl daemon-reload || return 1
- echo 'KDE X11 retry watcher files installed. PAM and existing keys unchanged.'
+ echo 'KDE X11 USB insertion monitor installed. No synthetic Enter is sent; PAM and keys unchanged.'
 }
 enable_kde_retry(){
  echo
- echo '=== KDE X11: AUTOMATIC FIDO2 RETRY ==='
- echo 'What this does: watches for FIDO2 USB insertion while your KDE screen is locked.'
- echo 'It tries to restart the existing PAM challenge using one simulated Enter keystroke.'
- echo 'Your password fallback remains available; physical key touch is still required.'
- echo 'CAUTION: Experimental on KDE/X11; may submit typed text. Not supported on Wayland.'
+ echo '=== KDE X11: FIDO2 HOTPLUG MONITOR (SAFE MODE) ==='
+ echo 'This service detects key insertion while KDE is locked and records diagnostics.'
+ echo 'It does NOT send Enter or unlock: that previous experiment caused failed password attempts.'
+ echo 'Manual unlock remains: insert key, press Enter on a blank field, then touch the key.'
+ echo 'The original PAM configuration and password fallback are preserved.'
  echo
  local answer
- read -r -p 'Install and enable this watcher now? [y/N]: ' answer
+ read -r -p 'Install and enable the read-only insertion monitor? [y/N]: ' answer
  case "$answer" in
     y|Y|yes|YES|Yes) ;;
-    *) echo 'No changes made. Automatic insertion retry remains unchanged.'; return 0 ;;
+    *) echo 'No changes made.'; return 0 ;;
  esac
  if ! install_kde_retry; then
-    echo 'ERROR: Watcher installation failed. Existing keys and PAM were not modified.'
+    echo 'ERROR: Monitor installation failed. Existing keys and PAM not modified.'
     return 1
  fi
  if ! user_systemctl enable "$RETRY_UNIT_NAME"; then
-    echo 'ERROR: Could not enable the user watcher. Check user systemd session.'
+    echo 'ERROR: Cannot enable the user monitor.'
     return 1
  fi
- # enable --now does not restart a previously running service after script updates.
  if ! user_systemctl restart "$RETRY_UNIT_NAME"; then
-    echo 'ERROR: Could not start/restart the updated user watcher.'
+    echo 'ERROR: Cannot start/restart the user monitor.'
     return 1
  fi
  if ! user_systemctl is-active "$RETRY_UNIT_NAME"; then
-    echo 'ERROR: Watcher did not stay active. Check journalctl --user.'
+    echo 'ERROR: User monitor is not active.'
     return 1
  fi
- echo
- echo 'SUCCESS: KDE X11 insertion watcher is ENABLED and RUNNING.'
- echo 'Test: remove the key, lock KDE, reinsert it, and then touch it if prompted.'
+ echo 'SUCCESS: FIDO2 USB monitor ACTIVE (authentication auto-retry is DISABLED for safety).'
  echo 'Logs: journalctl --user -u fido2-kde-retry.service -n 50 --no-pager'
- echo 'Rollback: menu 19, or systemctl --user disable --now fido2-kde-retry.service'
 }
 disable_kde_retry(){
  user_systemctl disable --now "$RETRY_UNIT_NAME" 2>/dev/null || :
- echo 'KDE X11 auto-retry disabled. PAM, keys and removal locking untouched.'
+ echo 'KDE X11 insertion monitor disabled. PAM, keys and removal locking untouched.'
 }
 
 show_header(){
@@ -874,8 +861,8 @@ menu_choice(){
    15 'Disable lock on key removal'
    16 'Connected FIDO2 device / KDE diagnostics'
    17 'Live FIDO2 USB hotplug diagnostics'
-   18 'Install / enable KDE X11 insertion retry (opt-in)'
-   19 'Disable KDE X11 insertion retry'
+   18 'Enable KDE X11 insertion monitor (safe mode)'
+   19 'Disable KDE X11 insertion monitor'
    0 'Exit'
  )
  local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
