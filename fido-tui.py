@@ -47,10 +47,10 @@ class GuardUI(App):
     Screen { background: #0b1320; color: #e4edf9; }
     Header { background: #101f34; color: #7fc4fc; }
     Footer { background: #101f34; }
-    #hero { dock: top; height: 12; padding: 0 2; background: #10243a; color: #d7ebff; }
+    #hero { dock: top; height: 10; padding: 0 2; background: #10243a; color: #d7ebff; }
     #hero_title { text-style: bold; color: #80c8ff; height: 1; }
     #hero_status { color: #b2c6db; height: 1; }
-    #health { height: 6; color: #d9edf8; }
+    #health { height: 5; color: #d9edf8; }
     #remediation { height: 2; color: #facb7a; }
     #health .green { color: #7ce1ba; }
     #health .yellow { color: #ffce84; }
