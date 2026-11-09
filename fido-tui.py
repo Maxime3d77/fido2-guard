@@ -31,6 +31,8 @@ ACTIONS = [
     ("15", "Disable lock on key removal", "MONITORING", "Keep PAM and keys; stop the monitoring daemon."),
     ("16", "Connected key and KDE status", "DIAGNOSTICS", "Check USB detection and PAM U2F rule without unlocking."),
     ("17", "Live FIDO2 insertion / removal monitor", "DIAGNOSTICS", "Stream real USB token changes. Read-only; cannot restart KDE authentication."),
+    ("18", "Enable KDE X11 FIDO auto-retry (experimental)", "KDE X11", "Install the optional per-user watcher; existing PAM mappings are preserved."),
+    ("19", "Disable KDE X11 FIDO auto-retry", "KDE X11", "Stop only the optional retry watcher. Password fallback remains unchanged."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
