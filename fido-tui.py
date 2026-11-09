@@ -41,15 +41,15 @@ BY_ID = {item[0]: item for item in ACTIONS}
 
 class GuardUI(App):
     TITLE = "FIDO2 GUARD"
-    SUB_TITLE = "Security key control center · v2.8"
+    SUB_TITLE = "Security key control center · v2.9"
     CSS = """
     Screen { background: #0b1320; color: #e4edf9; }
     Header { background: #101f34; color: #7fc4fc; }
     Footer { background: #101f34; }
-    #hero { dock: top; height: 10; padding: 0 2; background: #10243a; color: #d7ebff; }
+    #hero { dock: top; height: 11; padding: 0 2; background: #10243a; color: #d7ebff; }
     #hero_title { text-style: bold; color: #80c8ff; height: 1; }
     #hero_status { color: #b2c6db; height: 1; }
-    #health { height: 4; color: #d9edf8; }
+    #health { height: 5; color: #d9edf8; }
     #remediation { height: 2; color: #facb7a; }
     #health .green { color: #7ce1ba; }
     #health .yellow { color: #ffce84; }
@@ -135,9 +135,14 @@ class GuardUI(App):
             tone = "green" if state in ("READY", "ACTIVE", "CONFIGURED") else (
                 "yellow" if state in ("DISABLED", "MISSING") else "red")
             return f"{label} [{tone}]{state}[/]"
+        login = data.get("login", {})
+        display = str(login.get("display", "UNKNOWN"))
+        fstype = str(login.get("fstype", "UNKNOWN"))
+        login_note = "[yellow]PASSWORD REQUIRED FOR ECRYPTFS[/]" if login.get("ecryptfs") else "login not validated"
         lines = [
-            f"SYSTEM {data.get('overall', 'UNKNOWN')}  •  " + indicator("dependencies", "Packages"),
-            indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE PAM"),
+            f"{data.get('overall', 'UNKNOWN')}  •  " + indicator("dependencies", "Packages"),
+            indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE unlock PAM"),
+            f"Login: {display}   •   Home: {fstype}   •   {login_note}",
             indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion monitor"),
         ]
         self.query_one("#health", Static).update("\n".join(lines))
