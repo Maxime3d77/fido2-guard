@@ -153,6 +153,30 @@ Unplug and reinsert your security key. The output should include `REMOVED` and `
 
 The KDE 5.27 lock screen does not provide an independently validated external API for safely replacing an already-active password prompt with an FIDO2 prompt. Delivering this specific UX requires a separately developed and tested KScreenLocker integration, with version-specific handling for Plasma 5 and 6. **Do not run the integrated setup repeatedly to fix this behavior.**
 
+## Portable Linux compatibility (November 2026)
+
+FIDO2 Guard is a **single codebase**, but USB monitoring and lock-screen authentication are separate capabilities. The portable **passive USB insertion watcher** now runs under a user's systemd service on local **X11 or Wayland** sessions, using `pyudev`, `fido2-token` and `loginctl` without sending keyboard events. On existing installations the service is still named `fido2-kde-retry.service` for backward compatibility; its name does **not** mean automatic PAM retry is implemented.
+
+The new **Desktop compatibility report (menu 20)** can be invoked directly:
+
+```bash
+sudo /usr/bin/python3 fido-platform.py --user "$SUDO_USER"
+sudo /usr/bin/python3 fido-platform.py --user "$SUDO_USER" --json
+```
+
+It identifies the active local session, display manager (LightDM, SDDM, etc.), Plasma version, the presence of dedicated U2F PAM rules and home filesystem, and reports the available adapter. The health dashboard displays `Auto-switch: NOT_IMPLEMENTED` (KDE 5 or generic) or `NOT_VERIFIED` (KDE 6) rather than pretending a working USB watcher can restart an existing PAM conversation.
+
+| Desktop | USB insertion monitor | KDE/PAM or native U2F auth | Auto-switch on late insertion |
+| --- | --- | --- | --- |
+| KDE Plasma 5 / X11 | Supported (systemd) | Existing `kde` PAM rule | **Not implemented** |
+| KDE Plasma 6 / X11 or Wayland | Supported (systemd) | Probe native U2F capabilities per build | **Not verified** |
+| GNOME, other systemd Linux desktops | Supported for USB monitoring | Requires a desktop-specific adapter | **Not implemented** |
+| Non-systemd Linux | Detection script may work via `pyudev` | Depends on the desktop | User systemd service unsupported |
+
+This is **not** a universal automatic unlock solution. A native, tested greeter-side reauthentication API is needed to replace a pending password conversation without generating failed password attempts. Do not use simulated Enter, change a running greeter's ptrace protection, or force a `Qt.quit()` on `onSucceeded` without preserving KDE's protection against passwordless accidental unlocks. KDE 5 uses `authenticator.tryUnlock()` while KDE 6 has changed authentication interfaces; a single hardcoded QML patch is neither version-safe nor guaranteed to restart a busy PAM worker.
+
+The project includes **hardware-free smoke tests** and a GitHub Actions workflow checking Bash syntax, Python compilation and KDE/logind parser behavior with Python 3.9, 3.11 and 3.13. Hardware key touch, password fallback, greeter layout, multi-monitor behavior and black screens still require per-environment integration testing.
+
 ## LightDM and encrypted home warning
 
 The dashboard distinguishes KDE **screen unlock** from **initial desktop login** and detects the active display manager through systemd (do not assume SDDM just because the desktop is KDE). For an eCryptfs home, it shows **PASSWORD REQUIRED FOR ECRYPTFS** because `pam_ecryptfs.so unwrap` normally needs the login password to unwrap the home-directory mount passphrase.
@@ -257,7 +281,8 @@ fido2-guard/
 ├── fido2-guard.sh           # Terminal administration and setup menu
 ├── fido-removal-guard.py    # USB removal monitor; locks only
 ├── fido-hotplug.py         # Read-only event diagnostics
-├── fido-kde-x11-retry.py   # Passive KDE X11 USB insertion monitor (no key injection)
+├── fido-platform.py        # Desktop capabilities across Linux distros
+├── fido-kde-x11-retry.py   # Portable passive USB monitor (legacy filename)
 └── fido-tui.py             # Modern Textual TUI
 ```
 
