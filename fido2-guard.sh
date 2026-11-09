@@ -525,7 +525,7 @@ ensure_kde_pam_auto(){
 }
 guided_install(){
  local service answer count_keys i active_before=0 had_pam=0 created_now=0
- echo '=== INSTALLATION INTÉGRÉE FIDO2 GUARD v2.7 ==='
+ echo '=== INSTALLATION INTÉGRÉE FIDO2 GUARD v2.8 ==='
  echo '1. Dépendances  2. Clés et toucher  3. PAM KDE  4. Mot de passe  5. Verrouillage'
  echo 'Le service ne déverrouille JAMAIS une session. Le toucher FIDO se fait dans KDE.'
  echo 'En cas d’échec, le verrouillage automatique reste arrêté.'
@@ -599,13 +599,58 @@ guided_install(){
  echo 'Si tu veux ensuite le verrouillage au retrait, utilise le MENU 14.'
  echo 'Le menu 15 le désactive sans modifier PAM ni tes clés.'
 }
+
+kde_key_state_diagnostic(){
+ echo '=== KDE / FIDO2 : état des clés et du déverrouillage ==='
+ echo 'Ce contrôle est en lecture seule : il ne déverrouille pas KDE et ne modifie pas PAM.'
+ echo
+ if command -v fido2-token >/dev/null 2>&1; then
+   local devices
+   devices=$(timeout 10s fido2-token -L 2>/dev/null || true)
+   if [[ -n "$devices" ]]; then
+     echo 'Clé(s) FIDO visible(s) par le système :'
+     printf '%s\n' "$devices"
+   else
+     echo 'Aucune clé FIDO détectée : utiliser le mot de passe.'
+   fi
+ else
+   echo 'fido2-token absent : installer les dépendances (menu 01).'
+ fi
+ echo
+ if [[ -r "$MAP" ]]; then
+   echo "Autorisations enregistrées pour $TARGET : $(count)"
+ else
+   echo 'Aucun fichier d’autorisations U2F lisible.'
+ fi
+ local service
+ service=kde
+ if [[ -s "$PAM_TARGET_META" ]]; then service=$(cat "$PAM_TARGET_META"); fi
+ if [[ "$service" =~ ^[a-zA-Z0-9_-]+$ ]] && [[ -r "/etc/pam.d/$service" ]]; then
+   if grep -q 'pam_u2f.so.*userpresence=1' "/etc/pam.d/$service"; then
+     echo "PAM $service : FIDO2 avec toucher configuré (fonctionnement réel à vérifier)."
+   else
+     echo "PAM $service : aucune règle FIDO2 avec toucher reconnue."
+   fi
+ else
+   echo 'Service PAM KDE non confirmé.'
+ fi
+ echo
+ echo 'Important : la présence USB ne prouve pas que la clé est autorisée.'
+ echo 'KScreenLocker ne fournit pas ici de commande publique fiable permettant'
+ echo 'de rebasculer instantanément une tentative PAM déjà passée au mot de passe.'
+ echo 'Ne pas envoyer de touches OTP ni relancer le greeter depuis le service root.'
+ echo
+ echo 'Comportement sûr : si FIDO2 est déjà proposé, toucher la clé ;'
+ echo 'sinon utiliser le mot de passe. Le service ne déverrouille jamais la session.'
+}
+
 show_header(){
  clear 2>/dev/null || :
  local svc=DÉSACTIVÉ pam=INACTIF
  systemctl -q is-active thetis-guard.service && svc=ACTIF
  [[ -f "$PAM_TARGET_META" ]] && pam=FICHIER_MODIFIÉ
  printf '\033[1;36m╔══════════════════════════════════════════════════════════════════╗\n'
- printf '║                   FIDO2 GUARD  v2.7                            ║\n'
+ printf '║                   FIDO2 GUARD  v2.8                            ║\n'
  printf '║           Gestion sécurisée des clés Linux                     ║\n'
  printf '╚══════════════════════════════════════════════════════════════════╝\033[0m\n'
  printf '  Système : %-18s  Paquets : %-10s\n' "$OS_ID" "$PKG"
@@ -614,7 +659,7 @@ show_header(){
 }
 menu_choice(){
  if command -v whiptail >/dev/null && [[ -t 0 && -t 1 ]]; then
-   whiptail --title 'FIDO2 GUARD v2.7 • MENU PRINCIPAL' --backtitle "$OS_ID / $TARGET / $(count) clés" \
+   whiptail --title 'FIDO2 GUARD v2.8 • MENU PRINCIPAL' --backtitle "$OS_ID / $TARGET / $(count) clés" \
      --menu 'Sélectionner une opération :' 25 88 16 \
      1 'Dépendances / apt / dnf / pacman' \
      2 'Ajouter une clé FIDO2' \
@@ -631,6 +676,7 @@ menu_choice(){
      13 'Diagnostic PAM KDE' \
      14 'ACTIVER le verrouillage automatique au retrait' \
      15 'DÉSACTIVER le verrouillage au retrait (garder FIDO2)' \
+     16 'Diagnostic KDE : état de la clé et du profil PAM' \
      0 'Quitter' 3>&1 1>&2 2>&3 || echo 0
  else
    cat >&2 <<'EOF'
@@ -641,7 +687,8 @@ menu_choice(){
   [05] Importer clés anciennes    [12] PURGE complète
   [06] Test FIDO2 avec toucher    [13] Diagnostic PAM KDE
   [07] INSTALLATION INTÉGRÉE        [14] Activer verrouillage au retrait
-  [15] Désactiver verrouillage au retrait  [00] Quitter
+  [15] Désactiver verrouillage au retrait  [16] Diagnostic état clé KDE
+  [00] Quitter
 EOF
    read -r -p 'Choix : ' choice </dev/tty || choice=0
    echo "$choice"
@@ -655,7 +702,7 @@ while true; do
  1) install_deps;; 2) add_key;; 3) list_keys;; 4) revoke_key;; 5) import_old;;
  6) write_test_pam;; 7) guided_install;; 8) echo 'Pour configurer PAM avec les tests et la méthode de secours, utilise l’option 07.';; 9) rollback_kde_pam;;
  10) status;; 11) remove_guard;; 12) complete_purge;; 13) pam_diagnostic;;
- 14) enable_guard;; 15) disable_guard;;
+ 14) enable_guard;; 15) disable_guard;; 16) kde_key_state_diagnostic;;
  *) echo 'Choix invalide';;
  esac; then echo 'Opération non terminée / vérifier les messages.'; fi
  pause
