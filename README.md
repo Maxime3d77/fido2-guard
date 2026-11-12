@@ -58,7 +58,7 @@ The reported screen behavior has not yet been reproduced or attributed to a spec
 - Enable or disable **automatic locking on USB key removal** from the menu (**options 14 / 15**).
 - **Never unlock automatically**: the monitoring daemon does **not** call `loginctl unlock-session`.
 - KDE PAM diagnostics, service logs, PAM rollback, and confirmed full removal.
-- Detect mainstream distribution families using **apt**, **dnf**, or **pacman**.
+- Detect package families using **apt**, **dnf**, **pacman**, or **zypper**, with explicit immutable-host safeguards.
 
 ## Get the latest version
 
@@ -152,6 +152,63 @@ Unplug and reinsert your security key. The output should include `REMOVED` and `
 **This is a diagnostic watcher, not an automatic KDE authenticator.** USB detection proves only that a FIDO2 device is connected, not that it matches a registered PAM credential. The watcher cannot terminate or restart an existing PAM conversation in KScreenLocker, and it never unlocks a session.
 
 The KDE 5.27 lock screen does not provide an independently validated external API for safely replacing an already-active password prompt with an FIDO2 prompt. Delivering this specific UX requires a separately developed and tested KScreenLocker integration, with version-specific handling for Plasma 5 and 6. **Do not run the integrated setup repeatedly to fix this behavior.**
+
+## Multi-distribution Linux compatibility (November 2026)
+
+FIDO2 Guard has one common Linux codebase with a **distribution adapter**, a
+**desktop capability probe** and separate, opt-in authentication and monitoring
+features. Installing a package, registering a key, monitoring USB, editing a
+desktop PAM service and switching a lockscreen prompt are **not** the same
+operation.
+
+### Supported package families
+
+| Linux family | Examples | Package manager | PAM U2F package | Automatic package installation |
+| --- | --- | --- | --- | --- |
+| Debian | Debian, Ubuntu, Mint, Pop!_OS, Kali | `apt` | `libpam-u2f` + `pamu2fcfg` | Yes, if repositories provide packages |
+| Fedora/RHEL | Fedora, Rocky, AlmaLinux, CentOS | `dnf` | `pam-u2f` + `pamu2fcfg` | Yes; RHEL derivatives may require EPEL |
+| Arch | Arch, Manjaro, EndeavourOS, CachyOS | `pacman` | `pam-u2f` (includes `pamu2fcfg`) | Yes; update rolling system first |
+| SUSE | openSUSE Leap/Tumbleweed, SLES | `zypper` | `pam_u2f` | Core PAM packages; auxiliary tools vary by release |
+| Immutable/OSTree | Bazzite, Silverblue, Kinoite | `rpm-ostree` / distro-specific | Depends | **No**: deliberate safety block |
+| Others | Alpine, NixOS, non-systemd distributions | Distro-specific | Depends | **Not automated** |
+
+Only package mapping and portable USB detection are shared across these Linux systems. **Automatic
+modification of PAM is restricted to an explicitly identified KDE service,
+after a separate `pamtester` test, a backup and operator confirmation.** A
+symlinked or hard-linked PAM service is never overwritten. The shared login,
+`sudo` and `common-auth` / `system-auth` stacks are not edited by the manager.
+SELinux Enforcing continues to block the automated PAM modification path.
+This does **not** imply GNOME, GDM, LightDM or SDDM passwordless login support.
+
+The USB user watcher and lock-on-removal daemon require running **systemd** and
+a local graphical session. Non-systemd Linux remains eligible for key
+registration and isolated PAM tests if the packages are available, but its
+services are marked unsupported instead of silently failing. `pamtester`
+and the Textual UI are optional package dependencies; **`pamtester` becomes
+mandatory before any manager-driven PAM edit**.
+
+Run these **read-only** inspections on each Linux workstation:
+
+```bash
+cd /path/to/fido2-guard
+bash fido-linux-compat.sh --check
+bash fido-linux-compat.sh --packages core
+python3 fido-platform.py --user "$(id -un)"
+```
+
+Then launch `sudo bash fido2-guard.sh`. **Option 1** installs packages
+only for detected mutable distributions; **option 20** reports the actual
+desktop; **option 22** shows Linux package family, immutable status and
+systemd availability. Existing key mappings and PAM configuration are not
+changed by these diagnostic options.
+
+**Important:** This multi-OS layer does not magically implement automatic
+FIDO2 switching while the lockscreen is already asking for a password.
+On Plasma 5, `NOT_IMPLEMENTED` remains accurate. On Plasma 6, detection of a
+potential native U2F service is not proof of a working greeter; it must be
+tested per build. FIDO2 hardware still requires physical touch, and a
+password fallback must remain enabled. For eCryptfs homes, use the Linux
+password during first login to unwrap the home encryption secret.
 
 ## Intermittent multi-monitor black screens: safe tracing (menu 21)
 
@@ -302,6 +359,7 @@ fido2-guard/
 ├── fido-removal-guard.py    # USB removal monitor; locks only
 ├── fido-hotplug.py         # Read-only event diagnostics
 ├── fido-platform.py        # Desktop capabilities across Linux distros
+├── fido-linux-compat.sh    # Package families, systemd/OSTree guards and installer
 ├── fido-insertion-watch.py # Portable safe USB monitor (X11/Wayland)
 ├── fido-lock-trace.py     # Passive KDE/Linux multi-monitor lock diagnostic
 ├── fido-kde-x11-retry.py   # Legacy passive monitor name (compatibility)
