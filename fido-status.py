@@ -25,6 +25,8 @@ def cmd(args, timeout=3, env=None):
 
 def system_unit(name, user=None):
     """Read systemd states without opening a PAM session at every refresh."""
+    if not Path("/run/systemd/system").is_dir() or not shutil.which("systemctl"):
+        return {"state": "UNSUPPORTED", "detail": "systemd is not running"}
     arguments = ["systemctl"]
     env = None
     if user is not None:
@@ -34,12 +36,12 @@ def system_unit(name, user=None):
             return {"state": "ERROR", "detail": "User not found"}
         runtime = f"/run/user/{identity.pw_uid}"
         if not Path(runtime, "bus").is_socket():
-            return {"state": "MISSING", "detail": "User systemd bus unavailable"}
+            return {"state": "UNSUPPORTED", "detail": "User systemd bus unavailable"}
         env = dict(os.environ, XDG_RUNTIME_DIR=runtime,
                    DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/bus")
         # setpriv drops credentials without the PAM session opened by runuser.
         if not shutil.which("setpriv"):
-            return {"state": "ERROR", "detail": "setpriv unavailable (util-linux)"}
+            return {"state": "UNSUPPORTED", "detail": "setpriv unavailable (util-linux)"}
         arguments = ["setpriv", "--reuid", str(identity.pw_uid),
                      "--regid", str(identity.pw_gid), "--init-groups",
                      "--", "systemctl", "--user"]
@@ -108,7 +110,10 @@ def kde_pam():
             continue
         active_rules = [x.strip() for x in data.splitlines() if x.strip() and not x.lstrip().startswith("#")]
         u2f = any("pam_u2f.so" in x and "userpresence=1" in x and str(MAP) in x for x in active_rules)
-        fallback = any(re.match(r"^(auth\s+.*(common-auth|pam_unix\.so)|@include\s+common-auth)", x) for x in active_rules)
+        fallback = any(re.match(
+            r"^(auth\s+.*(common-auth|pam_unix\.so|system-auth|password-auth)"
+            r"|@include\s+(common-auth|system-auth|password-auth))", x)
+            for x in active_rules)
         if u2f and fallback:
             return {"state": "CONFIGURED", "detail": f"{service} PAM touch + password rules present; lock-screen testing required"}
         if u2f:
@@ -116,12 +121,24 @@ def kde_pam():
     return {"state": "MISSING", "detail": "No compatible KDE PAM rules detected (menu 13)"}
 
 def dependencies():
-    missing = [name for name in ("fido2-token", "pamu2fcfg", "loginctl", "pamtester") if not shutil.which(name)]
-    result = cmd(["/usr/bin/python3", "-c", "import pyudev"])
-    if not result or result.returncode:
-        missing.append("python3-pyudev")
-    return {"state": "READY" if not missing else "MISSING",
-            "detail": "Core tools installed" if not missing else "Missing: " + ", ".join(missing)}
+    missing = [name for name in ("fido2-token", "pamu2fcfg") if not shutil.which(name)]
+    python = shutil.which("python3")
+    if not python:
+        missing.append("python3")
+    else:
+        result = cmd([python, "-c", "import pyudev"])
+        if not result or result.returncode:
+            missing.append("python3-pyudev")
+    optional = []
+    if not shutil.which("pamtester"):
+        optional.append("pamtester (needed before changing PAM)")
+    if Path("/run/systemd/system").is_dir() and not shutil.which("loginctl"):
+        optional.append("loginctl (needed for USB monitoring)")
+    detail = ("Core tools installed" if not missing
+              else "Missing core tools: " + ", ".join(missing))
+    if optional:
+        detail += "; Optional: " + ", ".join(optional)
+    return {"state": "READY" if not missing else "MISSING", "detail": detail}
 
 def main():
     user = sys.argv[1] if len(sys.argv) == 2 else ""
@@ -146,7 +163,7 @@ def main():
                 pass
     retry_path = Path(pwd.getpwnam(user).pw_dir) / ".config/systemd/user/fido2-kde-retry.service"
     if not retry_path.exists() and retry["state"] != "ACTIVE":
-        retry = {"state": "MISSING", "detail": "Not installed; menu 18 installs and enables (KDE X11 only)"}
+        retry = {"state": "MISSING", "detail": "Not installed; menu 18 installs the portable USB watcher"}
     issues = []
     if deps["state"] != "READY":
         issues.append("Install missing dependencies (1)")
@@ -155,9 +172,9 @@ def main():
     if pam["state"] != "CONFIGURED":
         issues.append("Review KDE PAM configuration (13)")
     if retry["state"] == "MISSING":
-        issues.append("Optional: KDE X11 insertion watcher not installed (18)")
+        issues.append("Optional: USB insertion watcher not installed (18)")
     elif retry["state"] == "DISABLED":
-        issues.append("Optional: KDE X11 insertion watcher disabled (18)")
+        issues.append("Optional: USB insertion watcher disabled (18)")
     if lock["state"] == "DISABLED":
         issues.append("Optional: USB removal locking disabled (14)")
     if login["ecryptfs"]:
