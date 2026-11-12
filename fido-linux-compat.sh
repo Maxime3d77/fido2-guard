@@ -87,6 +87,20 @@ fido_linux_report() {
   fido_linux_packages core 2>/dev/null || echo '(automatic installation unsupported)'
   printf 'Optional pkgs: '
   fido_linux_packages optional 2>/dev/null || echo '(none)'
+  echo 'Detected local tools (read-only):'
+  local tool
+  for tool in pamu2fcfg fido2-token python3 pamtester; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      printf '  %-14s : available\n' "$tool"
+    else
+      printf '  %-14s : missing\n' "$tool"
+    fi
+  done
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import pyudev' >/dev/null 2>&1; then
+    echo '  python3-pyudev : available'
+  else
+    echo '  python3-pyudev : missing'
+  fi
   echo 'Known limitation: USB monitoring is not automatic PAM retry.'
 }
 
