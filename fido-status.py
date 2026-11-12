@@ -162,7 +162,8 @@ def main():
             except (ValueError, TypeError):
                 pass
     retry_path = Path(pwd.getpwnam(user).pw_dir) / ".config/systemd/user/fido2-kde-retry.service"
-    if not retry_path.exists() and retry["state"] != "ACTIVE":
+    if (not retry_path.exists()
+            and retry["state"] not in ("ACTIVE", "UNSUPPORTED")):
         retry = {"state": "MISSING", "detail": "Not installed; menu 18 installs the portable USB watcher"}
     issues = []
     if deps["state"] != "READY":
