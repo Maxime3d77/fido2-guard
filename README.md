@@ -49,6 +49,29 @@ journalctl -b --since "15 minutes ago" --no-pager |
 
 The reported screen behavior has not yet been reproduced or attributed to a specific component. No automatic greeter or display-manager restart is attempted.
 
+## Responsive terminal interface
+
+The Textual control center adapts to different terminal widths and heights.
+On terminals narrower than **112 columns**, the right-hand details panel is
+hidden and the action list takes the full width. On very small terminals
+(narrower than **66 columns** or shorter than **27 rows**) the status header is
+simplified further. The 22 action labels are intentionally short and the menu
+scrolls vertically, keeping actions usable over SSH and in smaller terminal
+windows. Resizing the terminal does not reinstall packages, modify PAM, or
+restart any service.
+
+After updating the Git checkout, start the manager normally:
+
+```bash
+git pull --ff-only
+sudo bash fido2-guard.sh
+```
+
+This release only improves the interface layout. A status such as
+`Auto-switch: NOT_IMPLEMENTED` on KDE Plasma 5 still indicates a real
+limitation of automated reauthentication on USB reinsertion; it is **not**
+caused by the terminal layout.
+
 ## Features
 
 - Manage multiple Thetis, YubiKey, and other FIDO2 authenticators.
