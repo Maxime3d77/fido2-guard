@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from textual.app import App, ComposeResult
+from textual import events
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, OptionList, Static
@@ -24,20 +25,20 @@ ACTIONS = [
     ("6", "Prepare a FIDO2 PAM test", "AUTHENTICATION", "Create an isolated PAM test profile."),
     ("7", "Integrated setup / repair", "AUTHENTICATION", "Install or repair PAM and the monitor; not needed for menu updates."),
     ("8", "PAM configuration help", "AUTHENTICATION", "Explain the secure installation workflow."),
-    ("9", "Restore KDE PAM configuration", "AUTHENTICATION", "Restore the PAM profile modified by this manager."),
+    ("9", "Restore KDE PAM", "AUTHENTICATION", "Restore the PAM profile modified by this manager."),
     ("10", "Service status and logs", "MONITORING", "Show service status and recent logs."),
-    ("11", "Remove the removal-monitor service", "MONITORING", "Remove the USB removal monitor without changing PAM or keys."),
+    ("11", "Remove removal-lock service", "MONITORING", "Remove the USB removal monitor without changing PAM or keys."),
     ("12", "Full removal", "MAINTENANCE", "Remove manager settings with backups and confirmation."),
     ("13", "KDE PAM diagnostics", "DIAGNOSTICS", "Inspect PAM profiles and KDE configuration."),
     ("14", "Enable lock on key removal", "MONITORING", "Lock the session when a recognized USB FIDO2 device is removed."),
     ("15", "Disable lock on key removal", "MONITORING", "Keep PAM and keys; stop the monitoring daemon."),
-    ("16", "Connected key and KDE status", "DIAGNOSTICS", "Check USB detection and PAM U2F rule without unlocking."),
-    ("17", "Live FIDO2 insertion / removal monitor", "DIAGNOSTICS", "Stream real USB token changes. Read-only; cannot restart KDE authentication."),
-    ("18", "Enable portable USB hotplug monitor (safe)", "MONITORING", "Observe FIDO USB events on systemd Linux desktops, including X11 and Wayland; no automatic unlock."),
+    ("16", "Key and KDE status", "DIAGNOSTICS", "Check USB detection and PAM U2F rule without unlocking."),
+    ("17", "Live USB events", "DIAGNOSTICS", "Stream real USB token changes. Read-only; cannot restart KDE authentication."),
+    ("18", "Enable USB monitor (safe)", "MONITORING", "Observe FIDO USB events on systemd Linux desktops, including X11 and Wayland; no automatic unlock."),
     ("19", "Disable USB hotplug monitor", "MONITORING", "Stop the optional USB monitor; password fallback is unchanged."),
     ("20", "Desktop compatibility report", "DIAGNOSTICS", "Detect KDE 5/6, X11/Wayland, login manager and eCryptfs; explain features not yet supported."),
-    ("21", "Screen-lock / multi-monitor incident trace", "DIAGNOSTICS", "Copy the safe per-user capture command for intermittent black screens; no PAM edits or keyboard injection."),
-    ("22", "Linux OS compatibility / packages", "DIAGNOSTICS", "Read-only apt/dnf/pacman/zypper support report; detects OSTree, systemd, and core/optional packages."),
+    ("21", "Screen-lock incident trace", "DIAGNOSTICS", "Copy the safe per-user capture command for intermittent black screens; no PAM edits or keyboard injection."),
+    ("22", "Linux compatibility / packages", "DIAGNOSTICS", "Read-only apt/dnf/pacman/zypper support report; detects OSTree, systemd, and core/optional packages."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
@@ -57,11 +58,21 @@ class GuardUI(App):
     #health .green { color: #7ce1ba; }
     #health .yellow { color: #ffce84; }
     #health .red { color: #ffa3a3; }
-    #workspace { height: 1fr; padding: 1 2 0 2; }
-    #left { width: 2fr; min-width: 32; }
-    #right { width: 1fr; min-width: 25; margin-left: 2; background: #122036; padding: 1 2; border: tall #284a69; }
+    #workspace { height: 1fr; min-height: 3; padding: 1 1 0 1; }
+    #left { width: 2fr; min-width: 35; min-height: 3; }
+    #right { width: 1fr; min-width: 30; margin-left: 1; background: #122036; padding: 1 1; border: tall #284a69; }
     #search { margin-bottom: 1; background: #172b44; border: tall #335575; }
-    #items { height: 1fr; border: tall #284a69; background: #0e1c2e; }
+    #items { height: 1fr; min-height: 2; border: tall #284a69; background: #0e1c2e; text-wrap: nowrap; text-overflow: ellipsis; overflow-y: auto; }
+    Screen.compact #right { display: none; }
+    Screen.compact #left { width: 1fr; min-width: 0; }
+    Screen.compact #workspace { padding: 0 1; }
+    Screen.compact #hero { height: 9; }
+    Screen.compact #remediation { height: 1; }
+    Screen.tiny #hero { height: 7; padding: 0 1; }
+    Screen.tiny #health { height: 4; }
+    Screen.tiny #remediation { display: none; }
+    Screen.tiny #workspace { padding: 0; }
+    Screen.tiny #help { display: none; }
     OptionList > .option-list--option-highlighted { background: #1b5d92; color: white; text-style: bold; }
     #detail_title { color: #7fc4fc; text-style: bold; height: 3; }
     #detail_group { color: #71d1c3; height: 3; }
@@ -110,10 +121,26 @@ class GuardUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.apply_responsive_layout()
         self.query_one("#items", OptionList).focus()
         self.update_detail()
         self.action_refresh_health()
         self.set_interval(15, self.action_refresh_health)
+
+    def apply_responsive_layout(self) -> None:
+        # The list must remain fully usable on 80-column SSH terminals.
+        # Hide details rather than shrinking the menu until entries wrap.
+        width, height = self.size.width, self.size.height
+        compact = width < 112
+        tiny = width < 66 or height < 27
+        previous = (self.screen.has_class("compact"), self.screen.has_class("tiny"))
+        self.screen.set_class(compact, "compact")
+        self.screen.set_class(tiny, "tiny")
+        if previous != (compact, tiny) and self.health:
+            self.render_health()
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.apply_responsive_layout()
 
     def action_refresh_health(self) -> None:
         script = Path(__file__).with_name("fido-status.py")
@@ -132,35 +159,68 @@ class GuardUI(App):
             self.query_one("#remediation", Static).update("Check read-only status checker and systemd connectivity.")
             return
 
+        self.render_health()
+
+    def render_health(self) -> None:
         data = self.health
+        if not data:
+            return
+
         def indicator(name: str, label: str) -> str:
             state = data.get(name, {}).get("state", "ERROR")
             tone = "green" if state in ("READY", "ACTIVE", "CONFIGURED") else (
-                "yellow" if state in ("DISABLED", "MISSING") else "red")
+                "yellow" if state in ("DISABLED", "MISSING", "UNSUPPORTED") else "red")
             return f"{label} [{tone}]{state}[/]"
+
         login = data.get("login", {})
         display = str(login.get("display", "UNKNOWN"))
         fstype = str(login.get("fstype", "UNKNOWN"))
-        login_note = "[yellow]PASSWORD REQUIRED FOR ECRYPTFS[/]" if login.get("ecryptfs") else "login not validated"
         platform = data.get("platform", {})
         distro = platform.get("distribution", {})
         package_mgr = str(distro.get("package_manager", "?"))
         version = str(platform.get("plasma", {}).get("version") or "?")
         session_type = str(platform.get("session", {}).get("type", "unknown"))
         auto = str(platform.get("auto_retry", "UNKNOWN"))
-        lines = [
-            f"{data.get('overall', 'UNKNOWN')}  •  " + indicator("dependencies", "Packages"),
-            indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE unlock PAM"),
-            f"Login: {display}   •   Home: {fstype}   •   {login_note}",
-            indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion monitor"),
-            f"KDE {version} / {session_type}   •   packages={package_mgr}   •   [yellow]Auto-switch: {auto}[/]",
-        ]
+
+        if self.screen.has_class("tiny"):
+            # Four short rows also work with a 60-column terminal.
+            lines = [
+                indicator("keys", "Keys") + "  " + indicator("pam", "KDE PAM"),
+                indicator("retry", "USB") + "  " + indicator("removal", "Removal"),
+                f"{display} / {fstype}" + (" - password required" if login.get("ecryptfs") else ""),
+                f"KDE {version} {session_type} - Auto: [yellow]{auto}[/]",
+            ]
+        elif self.screen.has_class("compact"):
+            lines = [
+                indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE PAM")
+                + "   •   " + indicator("dependencies", "Packages"),
+                indicator("retry", "USB monitor") + "   •   " + indicator("removal", "Removal lock"),
+                f"Login: {display}   •   Home: {fstype}"
+                + ("   •   [yellow]Password required[/]" if login.get("ecryptfs") else ""),
+                f"KDE {version} / {session_type}   •   Auto-switch: [yellow]{auto}[/]",
+            ]
+        else:
+            lines = [
+                f"{data.get('overall', 'UNKNOWN')}  •  " + indicator("dependencies", "Packages"),
+                indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE unlock PAM"),
+                f"Login: {display}   •   Home: {fstype}   •   "
+                + ("[yellow]PASSWORD REQUIRED FOR ECRYPTFS[/]" if login.get("ecryptfs") else "login not validated"),
+                indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion monitor"),
+                f"KDE {version} / {session_type}   •   packages={package_mgr}   •   [yellow]Auto-switch: {auto}[/]",
+            ]
         self.query_one("#health", Static).update("\n".join(lines))
         advice = data.get("advice", [])
+        if self.screen.has_class("tiny"):
+            return
         if advice:
-            self.query_one("#remediation", Static).update("\n".join("Next: " + str(x) for x in advice[:2]))
+            limit = 1 if self.screen.has_class("compact") else 2
+            self.query_one("#remediation", Static).update(
+                "\n".join("Next: " + str(item) for item in advice[:limit])
+            )
         else:
-            self.query_one("#remediation", Static).update("Components configured; verify both unlock methods on the KDE lock screen.")
+            self.query_one("#remediation", Static).update(
+                "Components configured; test both unlock methods on the KDE lock screen."
+            )
 
     def update_detail(self) -> None:
         selected = self.query_one("#items", OptionList)
