@@ -153,7 +153,7 @@ class GuardUI(App):
             indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE unlock PAM"),
             f"Login: {display}   •   Home: {fstype}   •   {login_note}",
             indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion monitor"),
-            f"KDE {version} / {session_type}   •   [{package_mgr}]   •   [yellow]Auto-switch: {auto}[/]",
+            f"KDE {version} / {session_type}   •   packages={package_mgr}   •   [yellow]Auto-switch: {auto}[/]",
         ]
         self.query_one("#health", Static).update("\n".join(lines))
         advice = data.get("advice", [])
