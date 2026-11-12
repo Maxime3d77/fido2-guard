@@ -13,14 +13,18 @@ MARK='# THETIS-FIDO2-V2 managed; password fallback remains below'
 META=$BASE/kde-created-by-manager
 USER_MAP=""
 PAM_TARGET_META=$BASE/kde-pam-target
-OS_ID=unknown; OS_LIKE=''; PKG=unsupported
-[[ -r /etc/os-release ]] && { . /etc/os-release; OS_ID=${ID:-unknown}; OS_LIKE=${ID_LIKE:-}; }
-case " $OS_ID $OS_LIKE " in
-  *' arch '*|*' manjaro '*|*' endeavouros '*|*' cachyos '*) PKG=pacman;;
-  *' fedora '*|*' rhel '*|*' centos '*) PKG=dnf;;
-  *' debian '*|*' ubuntu '*|*' linuxmint '*) PKG=apt;;
-esac
-if [[ -e /run/ostree-booted ]]; then PKG=immutable; fi
+# Distribution handling is shared across all supported Linux desktops.
+if [[ ! -r "$SELF_DIR/fido-linux-compat.sh" ]]; then
+  echo 'Missing fido-linux-compat.sh. Update the complete Git checkout.' >&2
+  exit 1
+fi
+# shellcheck source=fido-linux-compat.sh
+. "$SELF_DIR/fido-linux-compat.sh"
+fido_linux_detect
+OS_ID="$FIDO_OS_ID"
+OS_LIKE="$FIDO_OS_LIKE"
+PKG="$FIDO_OS_PACKAGE_MANAGER"
+[[ "$FIDO_OS_IMMUTABLE" == yes ]] && PKG=immutable
 TARGET=${SUDO_USER:-}
 [[ -n "$TARGET" && "$TARGET" != root ]] || TARGET=$(logname 2>/dev/null || true)
 [[ -n "$TARGET" && "$TARGET" != root ]] || { echo 'Impossible de trouver le compte cible (utiliser sudo depuis le compte graphique).'; exit 1; }
@@ -35,7 +39,13 @@ pause(){ read -r -p 'Entrée pour continuer...' _ || :; }
 backup(){
  local folder="$BASE/backups/$(date +%Y%m%d-%H%M%S)-$RANDOM"
  install -d -m 700 "$folder"
- for file in "$MAP" "$LABELS" "$TEST_PAM" "$KDE_PAM" "$UNIT"; do
+ local target_pam="$KDE_PAM" file
+ if [[ -s "$PAM_TARGET_META" ]]; then
+   local service
+   service=$(head -n1 "$PAM_TARGET_META")
+   [[ "$service" =~ ^[a-zA-Z0-9_-]+$ ]] && target_pam="/etc/pam.d/$service"
+ fi
+ for file in "$MAP" "$LABELS" "$TEST_PAM" "$KDE_PAM" "$target_pam" "$PAM_TARGET_META" "$UNIT"; do
    [[ ! -f "$file" ]] || cp -a "$file" "$folder/$(echo "$file" | tr / _)"
  done
  printf '%s\n' "$folder"
@@ -76,35 +86,14 @@ sync_user_authfile(){
 }
 
 install_deps(){
- echo 'Installing FIDO2, PAM, USB monitor, and terminal UI prerequisites.'
- case "$PKG" in
-  apt)
-    apt-get update || return 1
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      libpam-u2f pamu2fcfg fido2-tools python3 python3-pyudev \
-      python3-venv python3-pip pamtester whiptail || return 1
-    ;;
-  dnf)
-    dnf install -y pam-u2f pamu2fcfg libfido2 fido2-tools \
-      python3 python3-pyudev python3-pip pamtester newt || return 1
-    ;;
-  pacman)
-    # Do not run a full system upgrade automatically from a FIDO manager.
-    pacman -S --needed pam-u2f libfido2 python python-pip \
-      python-pyudev libnewt || return 1
-    echo 'On Arch, pamu2fcfg and pamtester may require separate packages; verify availability.'
-    ;;
-  *)
-    echo "Unsupported automatic dependency installation on: $OS_ID"
-    return 1
-    ;;
- esac
- echo 'Core package installation completed.'
- if [[ -f "$SELF_DIR/fido-tui.py" ]] && [[ -t 0 && -t 1 ]]; then
-   echo 'Checking the isolated Textual terminal interface...'
-   ensure_textual_ui || echo 'Textual is optional; the fallback menu remains available.'
+ echo 'Installing distribution-specific PAM U2F and USB dependencies.'
+ fido_linux_install_deps || return 1
+ if [[ -f "$SELF_DIR/fido-tui.py" && -t 0 && -t 1 ]]; then
+   echo 'Checking optional Textual terminal UI.'
+   ensure_textual_ui || echo 'Textual unavailable: fallback text menu remains available.'
  fi
 }
+
 list_keys(){
  echo "=== Clés autorisées pour $TARGET ==="
  if ! check_map; then return 0; fi
@@ -219,6 +208,10 @@ write_test_pam(){
  echo 'Débranche toutes les autres clés puis touche la clé testée.'
 }
 install_guard(){
+ if [[ "$FIDO_OS_SYSTEMD" != yes ]] || ! command -v systemctl >/dev/null; then
+   echo 'Removal locking requires a running systemd system instance; refusing.'
+   return 1
+ fi
  need fido2-token || return 1
  need loginctl || return 1
  if ! /usr/bin/python3 -c 'import pyudev' >/dev/null 2>&1; then
@@ -300,11 +293,25 @@ install_kde_pam(){
  case "$service" in kde|kscreenlocker) ;; *)
    echo 'Service personnalisé : validation manuelle requise. Aucune modification.'; return 1;; esac
  target="/etc/pam.d/$service"
+ # Never replace a distribution-managed symlink or a shared hard-linked PAM
+ # profile. This also protects authselect-managed setups on Fedora/RHEL.
+ if [[ -L "$target" ]]; then
+   echo "ERROR: $target is a symlink. Refusing to modify a shared PAM stack."
+   return 1
+ fi
+ if [[ -f "$target" ]] && [[ "$(stat -c %h "$target" 2>/dev/null || echo 2)" -gt 1 ]]; then
+   echo "ERROR: $target has multiple hard links; refusing to modify it."
+   return 1
+ fi
  if [[ -f "$target" ]]; then
    echo "Service PAM existant : $target"
    if grep -Fq "$MARK" "$target"; then echo 'Intégration déjà active.'; return 0; fi
-   if grep -Eq '^auth[[:space:]]|^@include[[:space:]]+common-auth' "$target"; then :; else
-     echo 'Profil PAM sans règle auth reconnue : arrêt.'; return 1
+   # Preserve an existing password-based fallback. PAM distro syntax differs:
+   # Debian includes common-auth, Fedora may use system-auth/substack,
+   # Arch/SUSE may reference pam_unix.so directly.
+   if grep -Eq '(^auth[[:space:]].*(pam_unix[.]so|common-auth|system-auth|password-auth)|^@include[[:space:]]+(common-auth|system-auth|password-auth))' "$target"; then :; else
+     echo 'PAM fallback unclear: no known password authentication chain. No changes.'
+     return 1
    fi
  else
    if [[ "$service" != kde || "$PKG" != apt || ! -f /etc/pam.d/common-auth ]]; then
@@ -695,6 +702,10 @@ user_systemctl(){
    systemctl --user "$@"
 }
 install_kde_retry(){
+ if [[ "$FIDO_OS_SYSTEMD" != yes ]] || ! command -v systemctl >/dev/null; then
+   echo 'USB user monitoring requires a running systemd instance; refusing.'
+   return 1
+ fi
  [[ -f "$RETRY_SRC" ]] || { echo 'Update your Git clone: fido-insertion-watch.py is missing.'; return 1; }
  # Detect the logged-in account through SUDO_USER, not the caller's
  # desktop type. The passive USB watcher works on both X11 and Wayland.
@@ -844,7 +855,7 @@ menu_choice(){
       read -r choice < "$selected" || choice=0
     fi
     rm -f "$selected"
-    [[ "$choice" =~ ^([1-9]|1[0-9]|2[01])$ ]] || choice=0
+    [[ "$choice" =~ ^([1-9]|1[0-9]|2[0-2])$ ]] || choice=0
     return 0
  fi
  local -a choices=(
@@ -869,6 +880,7 @@ menu_choice(){
    19 'Disable Linux FIDO2 insertion monitor'
    20 'Show desktop and FIDO2 compatibility report'
    21 'Capture intermittent lock-screen / multi-monitor diagnostics'
+   22 'Linux distribution compatibility and packages (read-only)'
    0 'Exit'
  )
  local prompt='Up/Down to scroll; Enter to select; Esc to exit.'
@@ -899,6 +911,7 @@ while true; do
  18) enable_kde_retry;; 19) disable_kde_retry;;
  20) /usr/bin/python3 "$SELF_DIR/fido-platform.py" --user "$TARGET";;
  21) lock_trace_help;;
+ 22) fido_linux_report;;
  17) if [[ -f "$SELF_DIR/fido-hotplug.py" ]]; then
         /usr/bin/python3 "$SELF_DIR/fido-hotplug.py" --watch
       else echo 'fido-hotplug.py missing; update your Git checkout.'; fi;;
