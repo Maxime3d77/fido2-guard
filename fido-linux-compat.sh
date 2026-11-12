@@ -37,6 +37,9 @@ fido_linux_detect() {
   [[ -d /run/systemd/system ]] && FIDO_OS_SYSTEMD=yes
   # A distro ID is informational, never enough to prove that PAM/desktop
   # authentication is safe to activate on this machine.
+  # A non-systemd Linux is supported for read-only checks and enrollment;
+  # detection must not fail merely because /run/systemd/system is absent.
+  return 0
 }
 
 fido_linux_packages() {
