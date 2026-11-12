@@ -16,7 +16,7 @@ from textual.widgets import Footer, Header, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 ACTIONS = [
-    ("1", "Install dependencies", "ENVIRONMENT", "Install required FIDO2/PAM packages (apt, dnf or pacman)."),
+    ("1", "Install dependencies", "ENVIRONMENT", "Install FIDO2/PAM packages for apt, dnf, pacman or zypper; immutable hosts are read-only."),
     ("2", "Add a FIDO2 security key", "SECURITY KEYS", "Register another key without removing existing keys."),
     ("3", "List registered security keys", "SECURITY KEYS", "Display registered security keys and labels."),
     ("4", "Revoke a security key", "SECURITY KEYS", "Revoke a credential with confirmation."),
@@ -37,6 +37,7 @@ ACTIONS = [
     ("19", "Disable USB hotplug monitor", "MONITORING", "Stop the optional USB monitor; password fallback is unchanged."),
     ("20", "Desktop compatibility report", "DIAGNOSTICS", "Detect KDE 5/6, X11/Wayland, login manager and eCryptfs; explain features not yet supported."),
     ("21", "Screen-lock / multi-monitor incident trace", "DIAGNOSTICS", "Copy the safe per-user capture command for intermittent black screens; no PAM edits or keyboard injection."),
+    ("22", "Linux OS compatibility / packages", "DIAGNOSTICS", "Read-only apt/dnf/pacman/zypper support report; detects OSTree, systemd, and core/optional packages."),
 ]
 BY_ID = {item[0]: item for item in ACTIONS}
 
@@ -142,6 +143,8 @@ class GuardUI(App):
         fstype = str(login.get("fstype", "UNKNOWN"))
         login_note = "[yellow]PASSWORD REQUIRED FOR ECRYPTFS[/]" if login.get("ecryptfs") else "login not validated"
         platform = data.get("platform", {})
+        distro = platform.get("distribution", {})
+        package_mgr = str(distro.get("package_manager", "?"))
         version = str(platform.get("plasma", {}).get("version") or "?")
         session_type = str(platform.get("session", {}).get("type", "unknown"))
         auto = str(platform.get("auto_retry", "UNKNOWN"))
@@ -150,7 +153,7 @@ class GuardUI(App):
             indicator("keys", "Keys") + "   •   " + indicator("pam", "KDE unlock PAM"),
             f"Login: {display}   •   Home: {fstype}   •   {login_note}",
             indicator("removal", "Removal lock") + "   •   " + indicator("retry", "Insertion monitor"),
-            f"KDE {version} / {session_type}   •   [yellow]Auto-switch: {auto}[/]",
+            f"KDE {version} / {session_type}   •   [{package_mgr}]   •   [yellow]Auto-switch: {auto}[/]",
         ]
         self.query_one("#health", Static).update("\n".join(lines))
         advice = data.get("advice", [])
