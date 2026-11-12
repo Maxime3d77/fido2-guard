@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Bash syntax
-        run: bash -n fido2-guard.sh
+        run: bash -n fido2-guard.sh && bash -n fido-linux-compat.sh
       - name: Python compilation
         run: python -m py_compile fido-platform.py fido-status.py fido-tui.py fido-hotplug.py fido-kde-x11-retry.py fido-insertion-watch.py fido-removal-guard.py fido-lock-trace.py
       - name: Run hardware-free tests
