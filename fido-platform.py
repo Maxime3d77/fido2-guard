@@ -4,7 +4,7 @@
 This module NEVER writes PAM, lockscreen QML, credentials, or session state.
 It deliberately does not equate a running USB watcher with automatic retry.
 """
-import configparser
+import shlex
 import json
 import os
 from pathlib import Path
@@ -21,6 +21,42 @@ def command(*args):
                               timeout=4, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
+
+
+
+def distribution_capabilities():
+    """Read os-release without executing its values (Python 3.9 compatible)."""
+    values = {}
+    try:
+        for row in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if "=" not in row or row.lstrip().startswith("#"):
+                continue
+            key, value = row.split("=", 1)
+            try:
+                parts = shlex.split(value, comments=False)
+            except ValueError:
+                continue
+            if parts:
+                values[key.strip()] = parts[0]
+    except OSError:
+        pass
+    distro = values.get("ID", "unknown").lower()
+    tokens = set([distro] + values.get("ID_LIKE", "").lower().split())
+    if tokens.intersection(("debian", "ubuntu", "linuxmint", "pop", "kali")):
+        family = "apt"
+    elif tokens.intersection(("fedora", "rhel", "centos", "rocky", "almalinux")):
+        family = "dnf"
+    elif tokens.intersection(("arch", "manjaro", "endeavouros", "cachyos")):
+        family = "pacman"
+    elif tokens.intersection(("opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles", "suse")):
+        family = "zypper"
+    else:
+        family = "unsupported"
+    return {"id": distro,
+            "pretty_name": values.get("PRETTY_NAME", distro),
+            "package_manager": family,
+            "immutable": Path("/run/ostree-booted").exists(),
+            "systemd": Path("/run/systemd/system").is_dir()}
 
 
 def login_session(uid):
@@ -120,6 +156,7 @@ def lockscreen_qml(plasma_major):
 def detect(user):
     user_info = pwd.getpwnam(user)
     session = login_session(user_info.pw_uid)
+    distribution = distribution_capabilities()
     plasma = plasma_version()
     de = "KDE Plasma" if plasma["major"] else "unknown / other"
     manager = desktop_manager()
@@ -149,6 +186,7 @@ def detect(user):
         note = "Only the USB monitor is currently generic; desktop UI needs an adapter."
     result = {
         "user": user,
+        "distribution": distribution,
         "desktop": de,
         "plasma": plasma,
         "session": session,
@@ -179,7 +217,12 @@ def main():
     if args.json:
         print(json.dumps(report, ensure_ascii=False))
         return
-    print("FIDO2 Guard desktop compatibility")
+    print("FIDO2 Guard Linux compatibility")
+    distro = report["distribution"]
+    print("Linux: {} | Packages: {} | Immutable: {} | systemd: {}".format(
+        distro["pretty_name"], distro["package_manager"],
+        "yes" if distro["immutable"] else "no",
+        "yes" if distro["systemd"] else "no"))
     print(f"Desktop: {report['desktop']} {report['plasma']['version'] or ''}"
           f" | Session: {report['session']['type']}"
           f" | Login: {report['display_manager']}")
@@ -189,6 +232,10 @@ def main():
     print(report["explanation"])
     for item in report["qml"][:3]:
         print("QML: {} ({})".format(item["reauth_api"], item["path"]))
+    if distro["immutable"]:
+        print("WARNING: OSTree/immutable host; package layering and PAM changes are not automated.")
+    if not distro["systemd"]:
+        print("WARNING: systemd services unavailable; key management may work, but automatic monitoring is unsupported.")
     if report["encrypted_home_needs_password"]:
         print("WARNING: eCryptfs first login requires a home-unwrapping secret;"
               " FIDO2 touch alone does not provide it.")
