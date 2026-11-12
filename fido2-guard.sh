@@ -199,6 +199,10 @@ import_old(){
  echo "Import terminé, $(count) clé(s). Tester avec toucher avant PAM KDE."
 }
 write_test_pam(){
+ if [[ "$FIDO_OS_IMMUTABLE" == yes ]]; then
+   echo 'Immutable OSTree host: PAM test profile modification is disabled.'
+   return 1
+ fi
  check_map || return 1
  sync_user_authfile || return 1
  printf 'auth required pam_u2f.so authfile=%s userpresence=1 cue\n' "$USER_MAP" > "$TEST_PAM"
@@ -208,6 +212,10 @@ write_test_pam(){
  echo 'Débranche toutes les autres clés puis touche la clé testée.'
 }
 install_guard(){
+ if [[ "$FIDO_OS_IMMUTABLE" == yes ]]; then
+   echo 'Immutable OSTree host: automatic system service installation is disabled.'
+   return 1
+ fi
  if [[ "$FIDO_OS_SYSTEMD" != yes ]] || ! command -v systemctl >/dev/null; then
    echo 'Removal locking requires a running systemd system instance; refusing.'
    return 1
@@ -283,6 +291,10 @@ pam_diagnostic(){
  echo 'Sans preuve du nom réel, aucune activation PAM automatique n’est sûre.'
 }
 install_kde_pam(){
+ if [[ "$FIDO_OS_IMMUTABLE" == yes ]]; then
+   echo 'Immutable OSTree host: automatic KDE PAM modifications are disabled.'
+   return 1
+ fi
  check_map || return 1
  need pamtester || return 1
  pam_diagnostic
@@ -702,6 +714,10 @@ user_systemctl(){
    systemctl --user "$@"
 }
 install_kde_retry(){
+ if [[ "$FIDO_OS_IMMUTABLE" == yes ]]; then
+   echo 'Immutable OSTree host: watcher deployment into /usr/local is disabled.'
+   return 1
+ fi
  if [[ "$FIDO_OS_SYSTEMD" != yes ]] || ! command -v systemctl >/dev/null; then
    echo 'USB user monitoring requires a running systemd instance; refusing.'
    return 1
